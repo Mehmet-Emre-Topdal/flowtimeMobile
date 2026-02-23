@@ -3,6 +3,7 @@ import {
     View, Text, TextInput, TouchableOpacity, FlatList,
     ActivityIndicator, StyleSheet, Alert, Modal,
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { useAppSelector } from '../hooks/storeHooks';
 import {
     useGetTasksQuery,
@@ -20,6 +21,7 @@ interface Props {
 }
 
 export default function TasksScreen({ selectedTaskId, onSelectTask }: Props) {
+    const { t } = useTranslation();
     const { user } = useAppSelector(state => state.auth);
     const uid = user?.uid ?? '';
 
@@ -52,7 +54,7 @@ export default function TasksScreen({ selectedTaskId, onSelectTask }: Props) {
         await createTask({
             userId: uid,
             task: { title: newTitle.trim(), description: newDesc.trim(), status: 'todo' },
-            order: activeTasks.length,
+            order: tasks.length,
         });
         setNewTitle('');
         setNewDesc('');
@@ -78,10 +80,10 @@ export default function TasksScreen({ selectedTaskId, onSelectTask }: Props) {
     };
 
     const handleDelete = (task: TaskDto) => {
-        Alert.alert('Görevi Sil', `"${task.title}" kalıcı olarak silinsin mi?`, [
-            { text: 'İptal', style: 'cancel' },
+        Alert.alert(t('tasks.deleteHeader'), `"${task.title}" ${t('tasks.deleteConfirm')}`, [
+            { text: t('common.cancel'), style: 'cancel' },
             {
-                text: 'Sil', style: 'destructive',
+                text: t('common.delete'), style: 'destructive',
                 onPress: async () => {
                     if (selectedTaskId === task.id) onSelectTask(null);
                     setEditingTask(null);
@@ -92,10 +94,10 @@ export default function TasksScreen({ selectedTaskId, onSelectTask }: Props) {
     };
 
     const handleArchive = (task: TaskDto) => {
-        Alert.alert('Görevi Arşivle', `"${task.title}" arşivlensin mi?`, [
-            { text: 'İptal', style: 'cancel' },
+        Alert.alert(t('tasks.archiveHeader'), `"${task.title}" ${t('tasks.archiveConfirm')}`, [
+            { text: t('common.cancel'), style: 'cancel' },
             {
-                text: 'Arşivle', style: 'destructive',
+                text: t('common.archive'), style: 'destructive',
                 onPress: () => {
                     if (selectedTaskId === task.id) onSelectTask(null);
                     archiveTask({ taskId: task.id });
@@ -122,9 +124,9 @@ export default function TasksScreen({ selectedTaskId, onSelectTask }: Props) {
     };
 
     const statusLabel = (status: string) => {
-        if (status === 'todo') return 'Yapılacak';
-        if (status === 'inprogress') return 'Devam';
-        return 'Bitti';
+        if (status === 'todo') return t('tasks.toDoShort');
+        if (status === 'inprogress') return t('tasks.inProgressShort');
+        return t('tasks.doneShort');
     };
 
     const renderTask = ({ item }: { item: TaskDto }) => {
@@ -138,7 +140,7 @@ export default function TasksScreen({ selectedTaskId, onSelectTask }: Props) {
                         <Text style={styles.taskDesc} numberOfLines={1}>{item.description}</Text>
                     ) : null}
                     <Text style={styles.taskFocus}>
-                        Odak: {Math.round(item.totalFocusedTime)} dk
+                        {t('tasks.focusing')}: {Math.round(item.totalFocusedTime)} {t('tasks.focused')}
                     </Text>
                 </TouchableOpacity>
                 <View style={styles.taskActions}>
@@ -164,16 +166,16 @@ export default function TasksScreen({ selectedTaskId, onSelectTask }: Props) {
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <Text style={styles.heading}>Görevler</Text>
+                <Text style={styles.heading}>{t('tasks.tasks')}</Text>
                 <TouchableOpacity style={styles.addBtn} onPress={() => setShowNewTask(true)}>
-                    <Text style={styles.addBtnText}>+ Yeni</Text>
+                    <Text style={styles.addBtnText}>+ {t('common.create')}</Text>
                 </TouchableOpacity>
             </View>
 
             {isLoading ? (
                 <ActivityIndicator color="#6366f1" style={{ marginTop: 40 }} />
             ) : sortedTasks.length === 0 ? (
-                <Text style={styles.empty}>Henüz görev yok. Yeni bir görev ekle!</Text>
+                <Text style={styles.empty}>{t('tasks.noTasks')}</Text>
             ) : (
                 <FlatList
                     data={sortedTasks}
@@ -187,10 +189,10 @@ export default function TasksScreen({ selectedTaskId, onSelectTask }: Props) {
             <Modal visible={showNewTask} transparent animationType="slide">
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
-                        <Text style={styles.modalTitle}>Yeni Görev</Text>
+                        <Text style={styles.modalTitle}>{t('tasks.newTask')}</Text>
                         <TextInput
                             style={styles.input}
-                            placeholder="Görev başlığı"
+                            placeholder={t('tasks.titleLabel')}
                             placeholderTextColor="#888"
                             value={newTitle}
                             onChangeText={setNewTitle}
@@ -198,7 +200,7 @@ export default function TasksScreen({ selectedTaskId, onSelectTask }: Props) {
                         />
                         <TextInput
                             style={styles.input}
-                            placeholder="Açıklama (isteğe bağlı)"
+                            placeholder={`${t('tasks.descriptionLabel')} (${t('common.chars', 'isteğe bağlı')})`}
                             placeholderTextColor="#888"
                             value={newDesc}
                             onChangeText={setNewDesc}
@@ -208,7 +210,7 @@ export default function TasksScreen({ selectedTaskId, onSelectTask }: Props) {
                                 style={styles.cancelBtn}
                                 onPress={() => { setShowNewTask(false); setNewTitle(''); setNewDesc(''); }}
                             >
-                                <Text style={styles.cancelBtnText}>İptal</Text>
+                                <Text style={styles.cancelBtnText}>{t('common.cancel')}</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                                 style={[styles.confirmBtn, !newTitle.trim() && styles.confirmBtnDisabled]}
@@ -217,7 +219,7 @@ export default function TasksScreen({ selectedTaskId, onSelectTask }: Props) {
                             >
                                 {isCreating
                                     ? <ActivityIndicator color="#fff" size="small" />
-                                    : <Text style={styles.confirmBtnText}>Ekle</Text>
+                                    : <Text style={styles.confirmBtnText}>{t('common.create')}</Text>
                                 }
                             </TouchableOpacity>
                         </View>
@@ -229,10 +231,10 @@ export default function TasksScreen({ selectedTaskId, onSelectTask }: Props) {
             <Modal visible={!!editingTask} transparent animationType="slide">
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
-                        <Text style={styles.modalTitle}>Görevi Düzenle</Text>
+                        <Text style={styles.modalTitle}>{t('tasks.editTask')}</Text>
                         <TextInput
                             style={styles.input}
-                            placeholder="Görev başlığı"
+                            placeholder={t('tasks.titleLabel')}
                             placeholderTextColor="#888"
                             value={editTitle}
                             onChangeText={setEditTitle}
@@ -240,7 +242,7 @@ export default function TasksScreen({ selectedTaskId, onSelectTask }: Props) {
                         />
                         <TextInput
                             style={styles.input}
-                            placeholder="Açıklama (isteğe bağlı)"
+                            placeholder={`${t('tasks.descriptionLabel')} (${t('common.chars', 'isteğe bağlı')})`}
                             placeholderTextColor="#888"
                             value={editDesc}
                             onChangeText={setEditDesc}
@@ -250,13 +252,13 @@ export default function TasksScreen({ selectedTaskId, onSelectTask }: Props) {
                                 style={styles.deleteBtn}
                                 onPress={() => editingTask && handleDelete(editingTask)}
                             >
-                                <Text style={styles.deleteBtnText}>Sil</Text>
+                                <Text style={styles.deleteBtnText}>{t('common.delete')}</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                                 style={styles.cancelBtn}
                                 onPress={() => setEditingTask(null)}
                             >
-                                <Text style={styles.cancelBtnText}>İptal</Text>
+                                <Text style={styles.cancelBtnText}>{t('common.cancel')}</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                                 style={[styles.confirmBtn, !editTitle.trim() && styles.confirmBtnDisabled]}
@@ -265,7 +267,7 @@ export default function TasksScreen({ selectedTaskId, onSelectTask }: Props) {
                             >
                                 {isSaving
                                     ? <ActivityIndicator color="#fff" size="small" />
-                                    : <Text style={styles.confirmBtnText}>Kaydet</Text>
+                                    : <Text style={styles.confirmBtnText}>{t('common.save')}</Text>
                                 }
                             </TouchableOpacity>
                         </View>
@@ -281,11 +283,11 @@ export default function TasksScreen({ selectedTaskId, onSelectTask }: Props) {
                     onPress={() => setStatusPickerTask(null)}
                 >
                     <View style={styles.pickerSheet}>
-                        <Text style={styles.pickerTitle}>Durum Seç</Text>
+                        <Text style={styles.pickerTitle}>{t('tasks.changeStatus', 'Durum Seç')}</Text>
                         {([
-                            { value: 'todo', label: 'Yapılacak', color: '#888' },
-                            { value: 'inprogress', label: 'Devam Ediyor', color: '#6366f1' },
-                            { value: 'done', label: 'Tamamlandı', color: '#22c55e' },
+                            { value: 'todo', label: t('tasks.toDoShort'), color: '#888' },
+                            { value: 'inprogress', label: t('tasks.inProgressShort'), color: '#6366f1' },
+                            { value: 'done', label: t('tasks.doneShort'), color: '#22c55e' },
                         ] as const).map((opt) => (
                             <TouchableOpacity
                                 key={opt.value}

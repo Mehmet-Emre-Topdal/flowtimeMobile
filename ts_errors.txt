@@ -1,0 +1,2 @@
+﻿src/features/analytics/api/analyticsApi.ts(7,5): error TS2305: Module '"../../../types/analytics"' has no exported member 'EarnedFreedomResult'.
+src/lib/firebase.ts(2,35): error TS2305: Module '"firebase/auth"' has no exported member 'getReactNativePersistence'.

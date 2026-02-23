@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Vibration } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { useAppSelector } from '../hooks/storeHooks';
 import { useGetUserConfigQuery } from '../features/timer/api/timerApi';
 import { useCreateSessionMutation } from '../features/analytics/api/sessionsApi';
@@ -28,6 +29,7 @@ function formatTime(totalSeconds: number): string {
 }
 
 export default function TimerScreen({ selectedTask }: Props) {
+    const { t } = useTranslation();
     const { user } = useAppSelector(state => state.auth);
     const uid = user?.uid ?? '';
 
@@ -160,33 +162,37 @@ export default function TimerScreen({ selectedTask }: Props) {
         <View style={styles.container}>
             {selectedTask ? (
                 <View style={styles.taskBanner}>
-                    <Text style={styles.taskBannerLabel}>Seçili görev</Text>
+                    <Text style={styles.taskBannerLabel}>{t('timer.workingOn')}</Text>
                     <Text style={styles.taskBannerTitle} numberOfLines={1}>{selectedTask.title}</Text>
                 </View>
             ) : (
                 <View style={styles.taskBanner}>
-                    <Text style={styles.taskBannerEmpty}>Görevler sekmesinden bir görev seç</Text>
+                    <Text style={styles.taskBannerEmpty}>{t('tasks.noTasks')}</Text>
                 </View>
             )}
 
             <View style={styles.timerArea}>
                 {phase === 'idle' && (
                     <>
-                        <Text style={styles.timerLabel}>Hazır</Text>
+                        <Text style={styles.timerLabel}>{t('timer.readyToFocus')}</Text>
                         <Text style={styles.timerDisplay}>00:00</Text>
                     </>
                 )}
                 {phase === 'focus' && (
                     <>
-                        <Text style={styles.timerLabel}>{isPaused ? 'Duraklatıldı' : 'Odaklanıyorsun'}</Text>
+                        <Text style={styles.timerLabel}>
+                            {isPaused ? t('timer.paused') : t('tasks.focusing')}
+                        </Text>
                         <Text style={styles.timerDisplay}>{formatTime(elapsedSeconds)}</Text>
-                        <Text style={styles.timerHint}>Mola önerisi: {breakMinutes} dk</Text>
+                        <Text style={styles.timerHint}>
+                            {t('settings.focusRange')}: {breakMinutes} {t('tasks.focused')}
+                        </Text>
                     </>
                 )}
                 {phase === 'break' && (
                     <>
                         <Text style={[styles.timerLabel, { color: '#22c55e' }]}>
-                            {breakSeconds === 0 ? 'Mola bitti' : 'Mola zamanı'}
+                            {breakSeconds === 0 ? t('timer.rechargingFocus') : t('timer.breakTime')}
                         </Text>
                         <Text style={[styles.timerDisplay, { color: '#22c55e' }]}>
                             {formatTime(breakDisplay)}
@@ -198,7 +204,7 @@ export default function TimerScreen({ selectedTask }: Props) {
             <View style={styles.buttonArea}>
                 {phase === 'idle' && (
                     <TouchableOpacity style={styles.mainBtn} onPress={handleStart}>
-                        <Text style={styles.mainBtnText}>Başla</Text>
+                        <Text style={styles.mainBtnText}>{t('timer.start')}</Text>
                     </TouchableOpacity>
                 )}
                 {phase === 'focus' && (
@@ -207,14 +213,18 @@ export default function TimerScreen({ selectedTask }: Props) {
                             style={[styles.mainBtn, styles.pauseBtn, { flex: 1 }]}
                             onPress={isPaused ? handleResume : handlePause}
                         >
-                            <Text style={styles.mainBtnText}>{isPaused ? 'Devam Et' : 'Duraklat'}</Text>
+                            <Text style={styles.mainBtnText}>
+                                {isPaused ? t('common.resume') : t('common.pause')}
+                            </Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                             style={[styles.mainBtn, styles.stopBtn, { flex: 1 }]}
                             onPress={handleStopFocus}
                             disabled={isPaused}
                         >
-                            <Text style={[styles.mainBtnText, isPaused && { opacity: 0.4 }]}>Molaya Geç</Text>
+                            <Text style={[styles.mainBtnText, isPaused && { opacity: 0.4 }]}>
+                                {t('timer.break')}
+                            </Text>
                         </TouchableOpacity>
                     </View>
                 )}
@@ -226,7 +236,7 @@ export default function TimerScreen({ selectedTask }: Props) {
                                 onPress={isPaused ? handleResume : handlePause}
                             >
                                 <Text style={styles.mainBtnText}>
-                                    {isPaused ? 'Devam Et' : 'Duraklat'}
+                                    {isPaused ? t('common.resume') : t('common.pause')}
                                 </Text>
                             </TouchableOpacity>
                         )}
@@ -236,14 +246,18 @@ export default function TimerScreen({ selectedTask }: Props) {
                                 onPress={handleNewSession}
                                 disabled={isPaused}
                             >
-                                <Text style={[styles.mainBtnText, isPaused && { opacity: 0.4 }]}>Yeni Oturum</Text>
+                                <Text style={[styles.mainBtnText, isPaused && { opacity: 0.4 }]}>
+                                    {t('timer.newSession')}
+                                </Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                                 style={styles.endBtn}
                                 onPress={handleStopBreak}
                                 disabled={isPaused}
                             >
-                                <Text style={[styles.endBtnText, isPaused && { opacity: 0.4 }]}>Bitir</Text>
+                                <Text style={[styles.endBtnText, isPaused && { opacity: 0.4 }]}>
+                                    {t('common.finish')}
+                                </Text>
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -251,14 +265,14 @@ export default function TimerScreen({ selectedTask }: Props) {
 
                 {phase !== 'idle' && (
                     <TouchableOpacity style={styles.resetBtn} onPress={handleReset}>
-                        <Text style={styles.resetBtnText}>Sıfırla</Text>
+                        <Text style={styles.resetBtnText}>{t('common.clear', 'Sıfırla')}</Text>
                     </TouchableOpacity>
                 )}
             </View>
 
             <View style={styles.stats}>
                 <Text style={styles.statsText}>
-                    Toplam odak: {Math.round((selectedTask?.totalFocusedTime ?? 0))} dk
+                    {t('tasks.focused')}: {Math.round((selectedTask?.totalFocusedTime ?? 0))} {t('tasks.focused')}
                 </Text>
             </View>
         </View>

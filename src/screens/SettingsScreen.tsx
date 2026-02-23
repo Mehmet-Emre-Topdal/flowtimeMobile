@@ -3,6 +3,7 @@ import {
     View, Text, TouchableOpacity, StyleSheet, ScrollView,
     TextInput, ActivityIndicator, Alert,
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { useAppSelector } from '../hooks/storeHooks';
 import { useGetUserConfigQuery, useUpdateUserConfigMutation } from '../features/timer/api/timerApi';
 import { DEFAULT_CONFIG, FlowtimeInterval, UserConfig } from '../types/config';
@@ -12,6 +13,7 @@ interface Props {
 }
 
 export default function SettingsScreen({ onClose }: Props) {
+    const { t, i18n } = useTranslation();
     const { user } = useAppSelector(state => state.auth);
     const uid = user?.uid ?? '';
 
@@ -39,10 +41,14 @@ export default function SettingsScreen({ onClose }: Props) {
 
     const handleRemove = (index: number) => {
         if (intervals.length <= 1) {
-            Alert.alert('En az 1 aralık gerekli');
+            Alert.alert(t('settings.removeIntervalError', 'En az 1 aralık gerekli'));
             return;
         }
         setIntervals(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const changeLanguage = (lng: string) => {
+        i18n.changeLanguage(lng);
     };
 
     const handleSave = async () => {
@@ -62,22 +68,22 @@ export default function SettingsScreen({ onClose }: Props) {
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <Text style={styles.heading}>Ayarlar</Text>
+                <Text style={styles.heading}>{t('settings.title')}</Text>
                 <TouchableOpacity onPress={onClose}>
                     <Text style={styles.closeBtn}>✕</Text>
                 </TouchableOpacity>
             </View>
 
             <ScrollView style={styles.scroll} contentContainerStyle={{ paddingBottom: 32 }}>
-                <Text style={styles.sectionTitle}>Flowtime Aralıkları</Text>
+                <Text style={styles.sectionTitle}>{t('settings.flowIntervals')}</Text>
                 <Text style={styles.sectionDesc}>
-                    Odak süresi (dk) aralığına göre önerilen mola süresini ayarla.
+                    {t('settings.flowIntervalsDesc')}
                 </Text>
 
                 <View style={styles.tableHeader}>
                     <Text style={[styles.colLabel, styles.colMin]}>Min</Text>
-                    <Text style={[styles.colLabel, styles.colMax]}>Maks</Text>
-                    <Text style={[styles.colLabel, styles.colBreak]}>Mola (dk)</Text>
+                    <Text style={[styles.colLabel, styles.colMax]}>Max</Text>
+                    <Text style={[styles.colLabel, styles.colBreak]}>{t('settings.breakDuration')}</Text>
                     <View style={styles.colAction} />
                 </View>
 
@@ -117,18 +123,42 @@ export default function SettingsScreen({ onClose }: Props) {
                 ))}
 
                 <TouchableOpacity style={styles.addBtn} onPress={handleAdd}>
-                    <Text style={styles.addBtnText}>+ Aralık Ekle</Text>
+                    <Text style={styles.addBtnText}>+ {t('settings.addInterval')}</Text>
                 </TouchableOpacity>
+
+                <Text style={styles.sectionTitle}>{t('settings.language')}</Text>
+                <Text style={styles.sectionDesc}>
+                    {t('settings.languageDesc')}
+                </Text>
+
+                <View style={styles.langRow}>
+                    <TouchableOpacity
+                        style={[styles.langBtn, i18n.language === 'tr' && styles.langBtnActive]}
+                        onPress={() => changeLanguage('tr')}
+                    >
+                        <Text style={[styles.langBtnText, i18n.language === 'tr' && styles.langBtnTextActive]}>
+                            Türkçe
+                        </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.langBtn, i18n.language === 'en' && styles.langBtnActive]}
+                        onPress={() => changeLanguage('en')}
+                    >
+                        <Text style={[styles.langBtnText, i18n.language === 'en' && styles.langBtnTextActive]}>
+                            English
+                        </Text>
+                    </TouchableOpacity>
+                </View>
             </ScrollView>
 
             <View style={styles.footer}>
                 <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
-                    <Text style={styles.cancelBtnText}>İptal</Text>
+                    <Text style={styles.cancelBtnText}>{t('common.cancel')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={isSaving}>
                     {isSaving
                         ? <ActivityIndicator color="#fff" size="small" />
-                        : <Text style={styles.saveBtnText}>Kaydet</Text>
+                        : <Text style={styles.saveBtnText}>{t('common.save')}</Text>
                     }
                 </TouchableOpacity>
             </View>
@@ -190,4 +220,12 @@ const styles = StyleSheet.create({
         backgroundColor: '#6366f1', alignItems: 'center',
     },
     saveBtnText: { color: '#fff', fontWeight: '600', fontSize: 15 },
+    langRow: { flexDirection: 'row', gap: 10 },
+    langBtn: {
+        flex: 1, paddingVertical: 12, borderRadius: 8,
+        borderWidth: 1, borderColor: '#2a2a2a', alignItems: 'center',
+    },
+    langBtnActive: { borderColor: '#6366f1', backgroundColor: 'rgba(99, 102, 241, 0.1)' },
+    langBtnText: { color: '#888', fontSize: 14, fontWeight: '500' },
+    langBtnTextActive: { color: '#6366f1', fontWeight: '600' },
 });

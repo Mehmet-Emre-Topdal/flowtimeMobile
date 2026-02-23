@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import {
     View, Text, ScrollView, ActivityIndicator, StyleSheet,
     TouchableOpacity,
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { useAppSelector } from '../hooks/storeHooks';
 import { useGetAnalyticsQuery } from '../features/analytics/api/analyticsApi';
 import {
@@ -18,22 +19,22 @@ import {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function fmtMin(min: number): string {
-    if (min < 60) return `${Math.round(min)} dk`;
+function fmtMin(min: number, t: any): string {
+    if (min < 60) return `${Math.round(min)} ${t('tasks.focused')}`;
     const h = Math.floor(min / 60);
     const m = Math.round(min % 60);
-    return m > 0 ? `${h}s ${m}dk` : `${h}s`;
+    return m > 0 ? `${h}${t('analytics.weeklyWorkTime.h')} ${m}${t('tasks.focused')}` : `${h}${t('analytics.weeklyWorkTime.h')}`;
 }
 
 // ── Section wrapper ───────────────────────────────────────────────────────────
 
-function Section({ title, children, noData }: { title: string; children: React.ReactNode; noData?: boolean }) {
+function Section({ title, children, noData, t }: { title: string; children: React.ReactNode; noData?: boolean; t: any }) {
     return (
         <View style={styles.section}>
             <Text style={styles.sectionTitle}>{title}</Text>
             <View style={styles.sectionBody}>
                 {noData
-                    ? <Text style={styles.noData}>Yeterli veri yok</Text>
+                    ? <Text style={styles.noData}>{t('analytics.notEnoughData')}</Text>
                     : children}
             </View>
         </View>
@@ -42,16 +43,16 @@ function Section({ title, children, noData }: { title: string; children: React.R
 
 // ── 1. Daily Flow Waves ───────────────────────────────────────────────────────
 
-function DailyFlowWaves({ data }: { data: DailyFlowWavesResult }) {
+function DailyFlowWaves({ data, t }: { data: DailyFlowWavesResult; t: any }) {
     const active = data.slots.filter(s => s.totalMinutes > 0);
     const max = Math.max(...active.map(s => s.totalMinutes), 1);
     return (
-        <Section title="Günlük Akış Dalgaları" noData={!data.hasEnoughData}>
+        <Section title={t('analytics.flowWaves.title')} noData={!data.hasEnoughData} t={t}>
             {data.peakHour !== null && (
                 <Text style={styles.infoLine}>
-                    Zirve: <Text style={styles.accent}>{data.peakHour}:00</Text>
+                    {t('analytics.flowWaves.peak')}: <Text style={styles.accent}>{data.peakHour}:00</Text>
                     {data.troughHour !== null && (
-                        <>  {'  '}Dip: <Text style={styles.dimText}>{data.troughHour}:00</Text></>
+                        <>  {'  '}{t('analytics.flowWaves.trough')}: <Text style={styles.dimText}>{data.troughHour}:00</Text></>
                     )}
                 </Text>
             )}
@@ -80,18 +81,25 @@ function DailyFlowWaves({ data }: { data: DailyFlowWavesResult }) {
 
 // ── 2. Weekly Work Time ───────────────────────────────────────────────────────
 
-function WeeklyWorkTime({ data, weekOffset, onPrev, onNext }: {
+function WeeklyWorkTime({ data, weekOffset, onPrev, onNext, t }: {
     data: WeeklyWorkTimeResult;
     weekOffset: number;
     onPrev: () => void;
     onNext: () => void;
+    t: any;
 }) {
     const max = Math.max(...data.days.map(d => d.totalMinutes), 1);
     const dayLabels: Record<string, string> = {
-        mon: 'Pzt', tue: 'Sal', wed: 'Çar', thu: 'Per', fri: 'Cum', sat: 'Cmt', sun: 'Paz',
+        mon: t('analytics.weeklyWorkTime.days.mon'),
+        tue: t('analytics.weeklyWorkTime.days.tue'),
+        wed: t('analytics.weeklyWorkTime.days.wed'),
+        thu: t('analytics.weeklyWorkTime.days.thu'),
+        fri: t('analytics.weeklyWorkTime.days.fri'),
+        sat: t('analytics.weeklyWorkTime.days.sat'),
+        sun: t('analytics.weeklyWorkTime.days.sun'),
     };
     return (
-        <Section title="Haftalık Çalışma Süresi">
+        <Section title={t('analytics.weeklyWorkTime.title')} t={t}>
             <View style={styles.weekNav}>
                 <TouchableOpacity onPress={onPrev} style={styles.navBtn}>
                     <Text style={styles.navBtnText}>‹</Text>
@@ -101,7 +109,7 @@ function WeeklyWorkTime({ data, weekOffset, onPrev, onNext }: {
                     <Text style={[styles.navBtnText, weekOffset === 0 && styles.navBtnDisabled]}>›</Text>
                 </TouchableOpacity>
             </View>
-            <Text style={styles.weekTotal}>Toplam: {fmtMin(data.weekTotalMinutes)}</Text>
+            <Text style={styles.weekTotal}>{t('analytics.weeklyWorkTime.weekTotal')}: {fmtMin(data.weekTotalMinutes, t)}</Text>
             <View style={styles.barChart}>
                 {data.days.map((d, i) => (
                     <View key={i} style={styles.barCol}>
@@ -115,7 +123,7 @@ function WeeklyWorkTime({ data, weekOffset, onPrev, onNext }: {
                         </View>
                         <Text style={styles.barLabel}>{dayLabels[d.dayLabel] ?? d.dayLabel}</Text>
                         {d.totalMinutes > 0 && (
-                            <Text style={styles.barMin}>{Math.round(d.totalMinutes)}dk</Text>
+                            <Text style={styles.barMin}>{Math.round(d.totalMinutes)}{t('analytics.weeklyWorkTime.min')}</Text>
                         )}
                     </View>
                 ))}
@@ -133,16 +141,22 @@ const densityLabels: Record<string, string> = {
     scattered_mind: 'Dağınık Zihin',
 };
 
-function FocusDensity({ data }: { data: FocusDensityResult }) {
+function FocusDensity({ data, t }: { data: FocusDensityResult; t: any }) {
     const color = data.percentage >= 80 ? '#6366f1' : data.percentage >= 60 ? '#22c55e' : '#f59e0b';
+    const labelMapping: Record<string, string> = {
+        sharp: t('analytics.focusDensity.sharp'),
+        good: t('analytics.focusDensity.good'),
+        scattered_start: t('analytics.focusDensity.scattered_start'),
+        scattered_mind: t('analytics.focusDensity.scattered_mind'),
+    };
     return (
-        <Section title="Odak Yoğunluğu (Bugün)" noData={!data.hasEnoughData}>
+        <Section title={t('analytics.focusDensity.title')} noData={!data.hasEnoughData} t={t}>
             <View style={styles.densityRow}>
                 <View style={styles.densityCircle}>
                     <Text style={[styles.densityPct, { color }]}>{data.percentage}%</Text>
                 </View>
                 <Text style={[styles.densityLabel, { color }]}>
-                    {densityLabels[data.label]}
+                    {labelMapping[data.label]}
                 </Text>
             </View>
             <View style={styles.progressBg}>
@@ -154,11 +168,11 @@ function FocusDensity({ data }: { data: FocusDensityResult }) {
 
 // ── 4. Resistance Point ───────────────────────────────────────────────────────
 
-function ResistancePoint({ data }: { data: ResistancePointResult }) {
+function ResistancePoint({ data, t }: { data: ResistancePointResult; t: any }) {
     return (
-        <Section title="Direnç Noktası" noData={!data.hasEnoughData}>
-            <Text style={styles.bigStat}>{data.resistanceMinute} dk</Text>
-            <Text style={styles.dimText}>Çoğunlukla bu noktada duruyorsun</Text>
+        <Section title={t('analytics.resistancePoint.title')} noData={!data.hasEnoughData} t={t}>
+            <Text style={styles.bigStat}>{data.resistanceMinute} {t('tasks.focused')}</Text>
+            <Text style={styles.dimText}>{t('analytics.resistancePoint.tooltip').split('.')[0]}</Text>
             {data.last7DaysSessions.length > 0 && (
                 <View style={styles.dotRow}>
                     {data.last7DaysSessions.slice(0, 10).map((s, i) => (
@@ -178,14 +192,14 @@ function ResistancePoint({ data }: { data: ResistancePointResult }) {
 
 // ── 6. Natural Flow Window ────────────────────────────────────────────────────
 
-function NaturalFlowWindow({ data }: { data: NaturalFlowWindowResult }) {
+function NaturalFlowWindow({ data, t }: { data: NaturalFlowWindowResult; t: any }) {
     const maxCount = Math.max(...data.buckets.map(b => b.count), 1);
     return (
-        <Section title="Doğal Akış Penceresi" noData={!data.hasEnoughData}>
+        <Section title={t('analytics.flowWindow.title')} noData={!data.hasEnoughData} t={t}>
             <Text style={styles.infoLine}>
-                Çoğunlukla <Text style={styles.accent}>{data.dominantWindowStart}–{data.dominantWindowEnd} dk</Text> arası odaklanıyorsun
+                {t('analytics.flowWindow.windowText', { start: data.dominantWindowStart, end: data.dominantWindowEnd })}
             </Text>
-            <Text style={styles.dimText}>Medyan: {data.median} dk</Text>
+            <Text style={styles.dimText}>{t('analytics.flowWindow.medianText', { median: data.median })}</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 10 }}>
                 <View style={styles.barChart}>
                     {data.buckets.map((b, i) => (
@@ -210,17 +224,17 @@ function NaturalFlowWindow({ data }: { data: NaturalFlowWindowResult }) {
 
 // ── 7. Flow Streak ────────────────────────────────────────────────────────────
 
-function FlowStreak({ data }: { data: FlowStreakResult }) {
+function FlowStreak({ data, t }: { data: FlowStreakResult; t: any }) {
     return (
-        <Section title="Akış Serisi" noData={!data.hasEnoughData}>
+        <Section title={t('analytics.flowStreak.title')} noData={!data.hasEnoughData} t={t}>
             <View style={styles.streakNumbers}>
                 <View style={styles.streakItem}>
                     <Text style={styles.bigStat}>{data.currentStreak}</Text>
-                    <Text style={styles.dimText}>Günlük seri</Text>
+                    <Text style={styles.dimText}>{t('analytics.flowStreak.current')}</Text>
                 </View>
                 <View style={styles.streakItem}>
                     <Text style={[styles.bigStat, { color: '#f59e0b' }]}>{data.recordStreak}</Text>
-                    <Text style={styles.dimText}>Rekor</Text>
+                    <Text style={styles.dimText}>{t('analytics.flowStreak.record')}</Text>
                 </View>
             </View>
             <View style={styles.streakGrid}>
@@ -237,10 +251,10 @@ function FlowStreak({ data }: { data: FlowStreakResult }) {
 
 // ── 8. Task-Flow Harmony ──────────────────────────────────────────────────────
 
-function TaskFlowHarmony({ data }: { data: TaskFlowHarmonyResult }) {
+function TaskFlowHarmony({ data, t }: { data: TaskFlowHarmonyResult; t: any }) {
     const maxMin = data.items[0]?.totalFocusMinutes ?? 1;
     return (
-        <Section title="Görev-Akış Uyumu" noData={!data.hasEnoughData}>
+        <Section title={t('analytics.taskHarmony.title')} noData={!data.hasEnoughData} t={t}>
             {data.items.map((item, i) => {
                 const pct = maxMin > 0 ? item.totalFocusMinutes / maxMin : 0;
                 return (
@@ -251,7 +265,7 @@ function TaskFlowHarmony({ data }: { data: TaskFlowHarmonyResult }) {
                         <View style={styles.taskRowLabels}>
                             <Text style={styles.taskRowTitle} numberOfLines={1}>{item.taskTitle}</Text>
                             <Text style={styles.taskRowMin}>
-                                {fmtMin(item.totalFocusMinutes)} · {item.sessionCount} oturum
+                                {fmtMin(item.totalFocusMinutes, t)} · {item.sessionCount} {t('analytics.taskHarmony.sessions')}
                             </Text>
                         </View>
                     </View>
@@ -263,17 +277,17 @@ function TaskFlowHarmony({ data }: { data: TaskFlowHarmonyResult }) {
 
 // ── 9. Warmup Phase ───────────────────────────────────────────────────────────
 
-function WarmupPhase({ data }: { data: WarmupPhaseResult }) {
+function WarmupPhase({ data, t }: { data: WarmupPhaseResult; t: any }) {
     return (
-        <Section title="Isınma Fazı" noData={!data.hasEnoughData}>
-            <Text style={styles.bigStat}>{data.avgWarmupMinutes} dk</Text>
-            <Text style={styles.dimText}>Ortalama ısınma süresi</Text>
+        <Section title={t('analytics.warmup.title')} noData={!data.hasEnoughData} t={t}>
+            <Text style={styles.bigStat}>{data.avgWarmupMinutes} {t('tasks.focused')}</Text>
+            <Text style={styles.dimText}>{t('analytics.warmup.tooltip').split('.')[0]}</Text>
             {data.prevMonthWarmup !== null && data.changeMinutes !== null && (
                 <Text style={[styles.infoLine, { marginTop: 6 }]}>
-                    Geçen ay: {data.prevMonthWarmup} dk
+                    {t('analytics.warmup.avgText', { minutes: data.avgWarmupMinutes })}
                     {'  '}
                     <Text style={{ color: data.changeMinutes <= 0 ? '#22c55e' : '#f59e0b' }}>
-                        {data.changeMinutes > 0 ? '+' : ''}{data.changeMinutes} dk
+                        {data.changeMinutes > 0 ? t('analytics.warmup.worsened', { minutes: data.changeMinutes }) : t('analytics.warmup.improved', { minutes: Math.abs(data.changeMinutes) })}
                     </Text>
                 </Text>
             )}
@@ -284,6 +298,7 @@ function WarmupPhase({ data }: { data: WarmupPhaseResult }) {
 // ── Screen ────────────────────────────────────────────────────────────────────
 
 export default function AnalyticsScreen() {
+    const { t } = useTranslation();
     const { user } = useAppSelector(state => state.auth);
     const uid = user?.uid ?? '';
 
@@ -305,7 +320,7 @@ export default function AnalyticsScreen() {
     if (!data) {
         return (
             <View style={styles.center}>
-                <Text style={styles.noData}>Veri yüklenemedi</Text>
+                <Text style={styles.noData}>{t('analytics.loadingSessions')}</Text>
             </View>
         );
     }
@@ -313,23 +328,23 @@ export default function AnalyticsScreen() {
     return (
         <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
             <View style={styles.headingRow}>
-                <Text style={styles.heading}>İstatistikler</Text>
+                <Text style={styles.heading}>{t('analytics.title')}</Text>
                 {isFetching && <ActivityIndicator color="#6366f1" size="small" />}
             </View>
 
             {/* Summary */}
             <View style={styles.cardRow}>
                 <View style={styles.statCard}>
-                    <Text style={styles.statValue}>{fmtMin(data.summary.allTimeMinutes)}</Text>
-                    <Text style={styles.statLabel}>Toplam Odak</Text>
+                    <Text style={styles.statValue}>{fmtMin(data.summary.allTimeMinutes, t)}</Text>
+                    <Text style={styles.statLabel}>{t('analytics.weeklyWorkTime.workTime')}</Text>
                 </View>
                 <View style={styles.statCard}>
                     <Text style={styles.statValue}>{data.summary.totalSessions}</Text>
-                    <Text style={styles.statLabel}>Oturum</Text>
+                    <Text style={styles.statLabel}>{t('analytics.taskHarmony.sessions')}</Text>
                 </View>
                 <View style={styles.statCard}>
                     <Text style={styles.statValue}>{data.flowStreak.currentStreak}</Text>
-                    <Text style={styles.statLabel}>Seri 🔥</Text>
+                    <Text style={styles.statLabel}>{t('analytics.flowStreak.title')} 🔥</Text>
                 </View>
             </View>
 
@@ -338,15 +353,16 @@ export default function AnalyticsScreen() {
                 weekOffset={weekOffset}
                 onPrev={() => setWeekOffset(w => w - 1)}
                 onNext={() => setWeekOffset(w => Math.min(w + 1, 0))}
+                t={t}
             />
 
-            <FocusDensity data={data.focusDensity} />
-            <FlowStreak data={data.flowStreak} />
-            <DailyFlowWaves data={data.dailyFlowWaves} />
-            <ResistancePoint data={data.resistancePoint} />
-            <NaturalFlowWindow data={data.naturalFlowWindow} />
-            <TaskFlowHarmony data={data.taskFlowHarmony} />
-            <WarmupPhase data={data.warmupPhase} />
+            <FocusDensity data={data.focusDensity} t={t} />
+            <FlowStreak data={data.flowStreak} t={t} />
+            <DailyFlowWaves data={data.dailyFlowWaves} t={t} />
+            <ResistancePoint data={data.resistancePoint} t={t} />
+            <NaturalFlowWindow data={data.naturalFlowWindow} t={t} />
+            <TaskFlowHarmony data={data.taskFlowHarmony} t={t} />
+            <WarmupPhase data={data.warmupPhase} t={t} />
 
         </ScrollView>
     );

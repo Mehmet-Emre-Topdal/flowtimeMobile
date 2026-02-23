@@ -3,6 +3,7 @@ import {
     View, Text, TextInput, TouchableOpacity, FlatList,
     StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { useSendMessageMutation } from '../features/assistant/api/assistantApi';
 import {
     useGetChatHistoryQuery,
@@ -12,6 +13,7 @@ import {
 import { ChatMessage } from '../types/assistant';
 
 export default function AssistantScreen() {
+    const { t } = useTranslation();
     const [input, setInput] = useState('');
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [summary, setSummary] = useState<string | null>(null);
@@ -49,7 +51,7 @@ export default function AssistantScreen() {
             setSummary(result.updatedSummary);
             await saveChatHistory({ messages: result.updatedHistory, summary: result.updatedSummary });
             setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
-        } catch {}
+        } catch { }
     };
 
     const isLoading = historyLoading || isSending;
@@ -81,7 +83,7 @@ export default function AssistantScreen() {
         } catch {
             const errMsg: ChatMessage = {
                 role: 'assistant',
-                content: 'Bir hata oluştu. Lütfen tekrar dene.',
+                content: t('assistant.errorMessage'),
                 timestamp: new Date().toISOString(),
             };
             const withError = [...optimisticMessages, errMsg];
@@ -123,10 +125,10 @@ export default function AssistantScreen() {
             keyboardVerticalOffset={80}
         >
             <View style={styles.header}>
-                <Text style={styles.heading}>AI Asistan</Text>
+                <Text style={styles.heading}>{t('assistant.title')}</Text>
                 {messages.length > 0 && (
                     <TouchableOpacity onPress={handleClear}>
-                        <Text style={styles.clearText}>Temizle</Text>
+                        <Text style={styles.clearText}>{t('common.clear')}</Text>
                     </TouchableOpacity>
                 )}
             </View>
@@ -136,9 +138,9 @@ export default function AssistantScreen() {
                     {isSending
                         ? <ActivityIndicator color="#6366f1" />
                         : <>
-                            <Text style={styles.emptyTitle}>Merhaba!</Text>
+                            <Text style={styles.emptyTitle}>{t('assistant.welcomeTitle')}</Text>
                             <Text style={styles.emptySubtitle}>
-                                Odaklanma alışkanlıkların, istatistiklerin veya Flowtime tekniği hakkında sorular sorabilirsin.
+                                {t('assistant.welcomeText')}
                             </Text>
                         </>
                     }
@@ -157,14 +159,14 @@ export default function AssistantScreen() {
             {isSending && messages.length > 0 && (
                 <View style={styles.typingRow}>
                     <ActivityIndicator color="#6366f1" size="small" />
-                    <Text style={styles.typingText}>Düşünüyor...</Text>
+                    <Text style={styles.typingText}>{t('assistant.thinking')}</Text>
                 </View>
             )}
 
             <View style={styles.inputRow}>
                 <TextInput
                     style={styles.input}
-                    placeholder="Bir şey sor..."
+                    placeholder={t('assistant.placeholder')}
                     placeholderTextColor="#555"
                     value={input}
                     onChangeText={setInput}

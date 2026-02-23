@@ -3,6 +3,7 @@ import {
     Text, TextInput, TouchableOpacity,
     ActivityIndicator, StyleSheet, KeyboardAvoidingView, Platform, View,
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { useLoginWithEmailMutation, useRegisterWithEmailMutation, useLoginWithGoogleMutation } from '../features/auth/authApi';
@@ -14,6 +15,7 @@ const GOOGLE_CLIENT_ID = '290414008129-479nqms4n5oodido255jds092lomtlmn.apps.goo
 type Mode = 'login' | 'register';
 
 export default function LoginScreen() {
+    const { t } = useTranslation();
     const [mode, setMode] = useState<Mode>('login');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -35,13 +37,13 @@ export default function LoginScreen() {
             if (idToken) {
                 loginWithGoogle({ idToken }).unwrap().catch((err) => {
                     const e = err as { error?: string };
-                    setError(e?.error ?? 'Google ile giriş başarısız.');
+                    setError(e?.error ?? t('auth.googleFailed'));
                 });
             } else {
-                setError('Google token alınamadı.');
+                setError(t('auth.googleNoToken'));
             }
         } else if (response?.type === 'error') {
-            setError('Google ile giriş iptal edildi veya başarısız oldu.');
+            setError(t('auth.googleCancelled'));
         }
     }, [response]);
 
@@ -50,19 +52,19 @@ export default function LoginScreen() {
     const handleSubmit = async () => {
         setError(null);
         if (!email.trim() || !password.trim()) {
-            setError('E-posta ve şifre gerekli.');
+            setError(t('auth.emailPasswordRequired'));
             return;
         }
         try {
             if (mode === 'login') {
                 await loginWithEmail({ email, password }).unwrap();
             } else {
-                if (!displayName.trim()) { setError('İsim gerekli.'); return; }
+                if (!displayName.trim()) { setError(t('auth.nameRequired')); return; }
                 await registerWithEmail({ email, password, displayName }).unwrap();
             }
         } catch (err) {
             const e = err as { error?: string };
-            setError(e?.error ?? 'Bir hata oluştu.');
+            setError(e?.error ?? t('auth.genericError'));
         }
     };
 
@@ -78,7 +80,7 @@ export default function LoginScreen() {
             {mode === 'register' && (
                 <TextInput
                     style={styles.input}
-                    placeholder="İsim"
+                    placeholder={t('auth.namePlaceholder')}
                     placeholderTextColor="#888"
                     value={displayName}
                     onChangeText={setDisplayName}
@@ -88,7 +90,7 @@ export default function LoginScreen() {
 
             <TextInput
                 style={styles.input}
-                placeholder="E-posta"
+                placeholder={t('auth.emailPlaceholder')}
                 placeholderTextColor="#888"
                 value={email}
                 onChangeText={setEmail}
@@ -98,7 +100,7 @@ export default function LoginScreen() {
 
             <TextInput
                 style={styles.input}
-                placeholder="Şifre"
+                placeholder={t('auth.passwordPlaceholder')}
                 placeholderTextColor="#888"
                 value={password}
                 onChangeText={setPassword}
@@ -109,14 +111,14 @@ export default function LoginScreen() {
                 {isLoginLoading || isRegisterLoading
                     ? <ActivityIndicator color="#fff" />
                     : <Text style={styles.buttonText}>
-                        {mode === 'login' ? 'Giriş Yap' : 'Kayıt Ol'}
+                        {mode === 'login' ? t('auth.loginAction') : t('auth.registerAction')}
                     </Text>
                 }
             </TouchableOpacity>
 
             <View style={styles.dividerRow}>
                 <View style={styles.dividerLine} />
-                <Text style={styles.dividerText}>veya</Text>
+                <Text style={styles.dividerText}>{t('auth.or')}</Text>
                 <View style={styles.dividerLine} />
             </View>
 
@@ -127,13 +129,13 @@ export default function LoginScreen() {
             >
                 {isGoogleLoading
                     ? <ActivityIndicator color="#fff" />
-                    : <Text style={styles.buttonText}>Google ile Giriş Yap</Text>
+                    : <Text style={styles.buttonText}>{t('auth.loginGoogle')}</Text>
                 }
             </TouchableOpacity>
 
             <TouchableOpacity onPress={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(null); }}>
                 <Text style={styles.switchText}>
-                    {mode === 'login' ? 'Hesabın yok mu? Kayıt ol' : 'Zaten hesabın var mı? Giriş yap'}
+                    {mode === 'login' ? t('auth.noAccount') : t('auth.hasAccount')}
                 </Text>
             </TouchableOpacity>
         </KeyboardAvoidingView>

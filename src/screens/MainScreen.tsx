@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Modal } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppSelector } from '../hooks/storeHooks';
 import { useLogoutMutation } from '../features/auth/authApi';
@@ -13,6 +14,7 @@ import SettingsScreen from './SettingsScreen';
 type Tab = 'tasks' | 'timer' | 'analytics' | 'assistant';
 
 export default function MainScreen() {
+    const { t } = useTranslation();
     const { user } = useAppSelector(state => state.auth);
     const [logout] = useLogoutMutation();
     const [activeTab, setActiveTab] = useState<Tab>('tasks');
@@ -37,7 +39,7 @@ export default function MainScreen() {
                         <Text style={styles.logoutText}>⚙</Text>
                     </TouchableOpacity>
                     <TouchableOpacity onPress={() => logout()} style={styles.logoutBtn}>
-                        <Text style={styles.logoutText}>Çıkış</Text>
+                        <Text style={styles.logoutText}>{t('auth.logout')}</Text>
                     </TouchableOpacity>
                 </View>
             </View>
@@ -72,7 +74,7 @@ export default function MainScreen() {
                     onPress={() => setActiveTab('tasks')}
                 >
                     <Text style={[styles.tabIcon, activeTab === 'tasks' && styles.tabIconActive]}>☰</Text>
-                    <Text style={[styles.tabLabel, activeTab === 'tasks' && styles.tabLabelActive]}>Görevler</Text>
+                    <Text style={[styles.tabLabel, activeTab === 'tasks' && styles.tabLabelActive]}>{t('tabs.tasks')}</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -81,7 +83,7 @@ export default function MainScreen() {
                 >
                     {selectedTask && <View style={styles.taskDot} />}
                     <Text style={[styles.tabIcon, activeTab === 'timer' && styles.tabIconActive]}>◷</Text>
-                    <Text style={[styles.tabLabel, activeTab === 'timer' && styles.tabLabelActive]}>Timer</Text>
+                    <Text style={[styles.tabLabel, activeTab === 'timer' && styles.tabLabelActive]}>{t('tabs.timer')}</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -89,7 +91,7 @@ export default function MainScreen() {
                     onPress={() => setActiveTab('analytics')}
                 >
                     <Text style={[styles.tabIcon, activeTab === 'analytics' && styles.tabIconActive]}>📊</Text>
-                    <Text style={[styles.tabLabel, activeTab === 'analytics' && styles.tabLabelActive]}>İstatistik</Text>
+                    <Text style={[styles.tabLabel, activeTab === 'analytics' && styles.tabLabelActive]}>{t('tabs.analytics')}</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -97,7 +99,7 @@ export default function MainScreen() {
                     onPress={() => setActiveTab('assistant')}
                 >
                     <Text style={[styles.tabIcon, activeTab === 'assistant' && styles.tabIconActive]}>✦</Text>
-                    <Text style={[styles.tabLabel, activeTab === 'assistant' && styles.tabLabelActive]}>Asistan</Text>
+                    <Text style={[styles.tabLabel, activeTab === 'assistant' && styles.tabLabelActive]}>{t('tabs.assistant')}</Text>
                 </TouchableOpacity>
             </View>
         </SafeAreaView>
