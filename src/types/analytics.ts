@@ -94,13 +94,4 @@ export interface WarmupPhaseResult {
     hasEnoughData: boolean;
 }
 
-// --- 5. Earned Freedom ---
-export interface EarnedFreedomResult {
-    earnedMinutes: number;
-    usedMinutes: number;
-    balanceMinutes: number;
-    weekEarned: number;
-    weekUsed: number;
-    hasEnoughData: boolean;
-}
 
