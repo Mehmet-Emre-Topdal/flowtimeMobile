@@ -1,5 +1,23 @@
-import * as Notifications from 'expo-notifications';
-import { Platform, BackHandler } from 'react-native';
+import { Platform } from 'react-native';
+
+// Gracefully handle expo-notifications being unavailable
+let Notifications: any;
+try {
+    Notifications = require('expo-notifications');
+} catch {
+    // Provide mock implementation if expo-notifications is not available
+    Notifications = {
+        getPermissionsAsync: async () => ({ status: 'granted' }),
+        requestPermissionsAsync: async () => ({ status: 'granted' }),
+        dismissNotificationAsync: async () => { },
+        scheduleNotificationAsync: async () => { },
+        cancelScheduledNotificationAsync: async () => { },
+        getLastNotificationResponseAsync: async () => null,
+        setNotificationCategoryAsync: async () => { },
+        DEFAULT_ACTION_IDENTIFIER: 'DEFAULT_ACTION_IDENTIFIER',
+        SchedulableTriggerInputTypes: { TIME_INTERVAL: 'time-interval' },
+    };
+}
 
 const TIMER_NOTIFICATION_ID = 'flowtime_timer';
 
@@ -10,7 +28,90 @@ export type NotificationAction =
     | 'end_break'
     | 'close_app';
 
-// İzin iste (plugin olmadan, sadece local API kullan)
+// Bildirim kategorilerini (aksiyon butonları) OS'a kaydet
+async function registerNotificationCategories(): Promise<void> {
+    try {
+        // Odaklanma — aktif
+        await Notifications.setNotificationCategoryAsync('timer_focus', [
+            {
+                identifier: 'pause',
+                buttonTitle: '⏸ Duraklat',
+                options: { isDestructive: false, isAuthenticationRequired: false },
+            },
+            {
+                identifier: 'stop_focus',
+                buttonTitle: '☕ Molaya Geç',
+                options: { isDestructive: false, isAuthenticationRequired: false },
+            },
+            {
+                identifier: 'close_app',
+                buttonTitle: '✕ Kapat',
+                options: { isDestructive: true, isAuthenticationRequired: false },
+            },
+        ]);
+
+        // Odaklanma — duraklatılmış
+        await Notifications.setNotificationCategoryAsync('timer_focus_paused', [
+            {
+                identifier: 'resume',
+                buttonTitle: '▶ Devam Et',
+                options: { isDestructive: false, isAuthenticationRequired: false },
+            },
+            {
+                identifier: 'stop_focus',
+                buttonTitle: '☕ Molaya Geç',
+                options: { isDestructive: false, isAuthenticationRequired: false },
+            },
+            {
+                identifier: 'close_app',
+                buttonTitle: '✕ Kapat',
+                options: { isDestructive: true, isAuthenticationRequired: false },
+            },
+        ]);
+
+        // Mola — aktif
+        await Notifications.setNotificationCategoryAsync('timer_break', [
+            {
+                identifier: 'pause',
+                buttonTitle: '⏸ Duraklat',
+                options: { isDestructive: false, isAuthenticationRequired: false },
+            },
+            {
+                identifier: 'end_break',
+                buttonTitle: '✓ Molayı Bitir',
+                options: { isDestructive: false, isAuthenticationRequired: false },
+            },
+            {
+                identifier: 'close_app',
+                buttonTitle: '✕ Kapat',
+                options: { isDestructive: true, isAuthenticationRequired: false },
+            },
+        ]);
+
+        // Mola — duraklatılmış
+        await Notifications.setNotificationCategoryAsync('timer_break_paused', [
+            {
+                identifier: 'resume',
+                buttonTitle: '▶ Devam Et',
+                options: { isDestructive: false, isAuthenticationRequired: false },
+            },
+            {
+                identifier: 'end_break',
+                buttonTitle: '✓ Molayı Bitir',
+                options: { isDestructive: false, isAuthenticationRequired: false },
+            },
+            {
+                identifier: 'close_app',
+                buttonTitle: '✕ Kapat',
+                options: { isDestructive: true, isAuthenticationRequired: false },
+            },
+        ]);
+    } catch {
+        // Kategori kaydı başarısız olursa bildirimler butonlar olmadan çalışmaya devam eder
+    }
+}
+
+// İzin iste ve kategorileri kaydet
 export async function setupNotifications(): Promise<boolean> {
     try {
         const { status: existing } = await Notifications.getPermissionsAsync();
@@ -19,6 +120,10 @@ export async function setupNotifications(): Promise<boolean> {
         if (existing !== 'granted') {
             const { status } = await Notifications.requestPermissionsAsync();
             finalStatus = status;
+        }
+
+        if (finalStatus === 'granted') {
+            await registerNotificationCategories();
         }
 
         return finalStatus === 'granted';
@@ -36,7 +141,12 @@ function formatTime(totalSeconds: number): string {
     return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
 }
 
-// Mevcut timer bildirimini güncelle / oluştur (local API, plugin gerektirmez)
+function getCategoryIdentifier(phase: 'focus' | 'break', isPaused: boolean): string {
+    if (phase === 'focus') return isPaused ? 'timer_focus_paused' : 'timer_focus';
+    return isPaused ? 'timer_break_paused' : 'timer_break';
+}
+
+// Mevcut timer bildirimini güncelle / oluştur
 export async function updateTimerNotification(
     phase: 'focus' | 'break',
     seconds: number,
@@ -52,12 +162,14 @@ export async function updateTimerNotification(
     let body: string;
 
     if (phase === 'focus') {
-        title = isPaused ? 'Focus Paused' : 'Focus Session';
-        body = `⏱ ${formatTime(seconds)} elapsed`;
+        title = isPaused ? '⏸ Odaklanma Duraklatıldı' : '🎯 Odaklanma Oturumu';
+        body = `⏱ ${formatTime(seconds)} geçti`;
     } else {
-        title = isPaused ? 'Break Paused' : 'Break Time ☕';
-        body = `⏳ ${formatTime(seconds)} remaining`;
+        title = isPaused ? '⏸ Mola Duraklatıldı' : '☕ Mola Zamanı';
+        body = `⏳ ${formatTime(seconds)} kaldı`;
     }
+
+    const categoryIdentifier = getCategoryIdentifier(phase, isPaused);
 
     try {
         await Notifications.scheduleNotificationAsync({
@@ -67,11 +179,15 @@ export async function updateTimerNotification(
                 body,
                 sticky: true,
                 autoDismiss: false,
+                categoryIdentifier,
+                ...(Platform.OS === 'android' && {
+                    priority: 'high',
+                    ongoing: true,
+                }),
             },
             trigger: null, // hemen göster
         });
     } catch {
-        // notification görüntülemeyerse, en azından log'a yaz
         console.log(`Timer: ${title} - ${body}`);
     }
 }
@@ -90,8 +206,8 @@ export async function scheduleBreakEndNotification(breakSeconds: number): Promis
         await Notifications.scheduleNotificationAsync({
             identifier: 'flowtime_break_end',
             content: {
-                title: 'Break Over! 🎯',
-                body: 'Ready to focus again?',
+                title: '🎯 Mola Bitti!',
+                body: 'Tekrar odaklanmaya hazır mısın?',
             },
             trigger: {
                 type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
@@ -128,6 +244,23 @@ export async function getLastNotificationAction(): Promise<NotificationAction | 
         return actionId as NotificationAction;
     } catch {
         return null;
+    }
+}
+
+// Bildirim response listener — expo-notifications'ı direkt import etmeden kullan
+export function addNotificationResponseListener(
+    callback: (action: NotificationAction) => void,
+): { remove: () => void } {
+    try {
+        const sub = Notifications.addNotificationResponseReceivedListener((response: any) => {
+            const action = response.actionIdentifier as NotificationAction;
+            if (action && action !== Notifications.DEFAULT_ACTION_IDENTIFIER) {
+                callback(action);
+            }
+        });
+        return sub;
+    } catch {
+        return { remove: () => {} };
     }
 }
 

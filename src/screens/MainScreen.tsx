@@ -51,9 +51,11 @@ export default function MainScreen() {
                         onSelectTask={handleSelectTask}
                     />
                 )}
-                {activeTab === 'timer' && (
+                {/* TimerScreen her zaman mount'ta kalır; tab değişince sadece gizlenir.
+                    Bu sayede timer state (refs) tab geçişlerinde sıfırlanmaz. */}
+                <View style={{ display: activeTab === 'timer' ? 'flex' : 'none', flex: 1 }}>
                     <TimerScreen selectedTask={selectedTask} />
-                )}
+                </View>
                 {activeTab === 'analytics' && (
                     <AnalyticsScreen />
                 )}

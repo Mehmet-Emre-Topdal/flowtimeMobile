@@ -1,5 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Vibration } from 'react-native';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import {
+    View, Text, TouchableOpacity, StyleSheet, ActivityIndicator,
+    Vibration, AppState, AppStateStatus, BackHandler, Platform,
+} from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useAppSelector } from '../hooks/storeHooks';
 import { useGetUserConfigQuery } from '../features/timer/api/timerApi';
@@ -7,6 +10,14 @@ import { useCreateSessionMutation } from '../features/analytics/api/sessionsApi'
 import { useUpdateTaskFocusTimeMutation } from '../features/kanban/api/tasksApi';
 import { TaskDto } from '../types/task';
 import { DEFAULT_CONFIG, UserConfig } from '../types/config';
+import {
+    saveTimerState, loadTimerState, clearTimerState,
+} from '../lib/timerStorage';
+import {
+    updateTimerNotification, cancelTimerNotifications,
+    scheduleBreakEndNotification, handleNotificationAction,
+    addNotificationResponseListener, NotificationAction,
+} from '../lib/notifications';
 
 interface Props {
     selectedTask: TaskDto | null;
@@ -21,11 +32,12 @@ function getBreakMinutes(focusSeconds: number, config: UserConfig): number {
 }
 
 function formatTime(totalSeconds: number): string {
-    const h = Math.floor(totalSeconds / 3600);
-    const m = Math.floor((totalSeconds % 3600) / 60);
-    const s = totalSeconds % 60;
-    if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    const s = Math.max(0, Math.round(totalSeconds));
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+    return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
 }
 
 export default function TimerScreen({ selectedTask }: Props) {
@@ -37,115 +49,280 @@ export default function TimerScreen({ selectedTask }: Props) {
     const [createSession] = useCreateSessionMutation();
     const [updateFocusTime] = useUpdateTaskFocusTimeMutation();
 
-    const [isRunning, setIsRunning] = useState(false);
-    const [isPaused, setIsPaused] = useState(false);
-    const [elapsedSeconds, setElapsedSeconds] = useState(0);
-    const [phase, setPhase] = useState<'idle' | 'focus' | 'break'>('idle');
-    const [breakSeconds, setBreakSeconds] = useState(0);
-    const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-    const startTimeRef = useRef<Date | null>(null);
-
     const effectiveConfig = config ?? DEFAULT_CONFIG;
 
-    useEffect(() => {
-        if (isRunning && !isPaused && phase === 'focus') {
-            intervalRef.current = setInterval(() => {
-                setElapsedSeconds(prev => prev + 1);
-            }, 1000);
-        } else if (isRunning && !isPaused && phase === 'break') {
-            intervalRef.current = setInterval(() => {
-                setBreakSeconds(prev => {
-                    if (prev <= 1) {
-                        clearInterval(intervalRef.current!);
-                        intervalRef.current = null;
-                        return 0;
-                    }
-                    return prev - 1;
-                });
-            }, 1000);
-        } else {
-            if (intervalRef.current) clearInterval(intervalRef.current);
-        }
-        return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-    }, [isRunning, isPaused, phase]);
+    // --- Saat bazlı timer state ---
+    const [phase, setPhase] = useState<'idle' | 'focus' | 'break'>('idle');
+    const [isPaused, setIsPaused] = useState(false);
+    const [, forceUpdate] = useState(0); // sadece re-render için
 
-    // Vibrate when break countdown reaches 0
-    useEffect(() => {
-        if (phase === 'break' && breakSeconds === 0 && isRunning) {
-            setIsRunning(false);
-            Vibration.vibrate([0, 300, 150, 300]);
-        }
-    }, [breakSeconds, phase, isRunning]);
+    // Ref'ler — render tetiklemez, hesaplama için kullanılır
+    const phaseStartTimeRef = useRef<number>(0);     // mevcut faz ne zaman başladı
+    const pausedAtRef = useRef<number | null>(null);  // pause anında Date.now()
+    const pausedDurationRef = useRef<number>(0);      // toplam pause süresi (ms)
+    const breakDurationRef = useRef<number>(0);       // break fazının toplam süresi (s)
+    const focusStartTimeRef = useRef<number>(0);      // focus başlangıcı (session kaydı için)
+    const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const phaseRef = useRef<'idle' | 'focus' | 'break'>('idle');
+    const isPausedRef = useRef(false);
 
-    const saveCurrentSession = async (focusSec: number, endTime: Date) => {
-        if (focusSec < 60 || !uid || !startTimeRef.current) return;
+    // Ref'leri state ile senkron tut
+    phaseRef.current = phase;
+    isPausedRef.current = isPaused;
+
+    // Geçen süreyi hesapla (saniye)
+    const getElapsedSeconds = useCallback((): number => {
+        if (phaseRef.current === 'idle') return 0;
+        const pauseOffset = pausedAtRef.current
+            ? Date.now() - pausedAtRef.current + pausedDurationRef.current
+            : pausedDurationRef.current;
+        const elapsed = (Date.now() - phaseStartTimeRef.current - pauseOffset) / 1000;
+        return Math.max(0, elapsed);
+    }, []);
+
+    // Break kalan süresini hesapla (saniye)
+    const getBreakRemaining = useCallback((): number => {
+        return Math.max(0, breakDurationRef.current - getElapsedSeconds());
+    }, [getElapsedSeconds]);
+
+    // --- setInterval: sadece re-render + bildirim güncelle ---
+    const startTick = useCallback(() => {
+        if (intervalRef.current) clearInterval(intervalRef.current);
+        intervalRef.current = setInterval(() => {
+            forceUpdate(n => n + 1);
+
+            const currentPhase = phaseRef.current;
+            const paused = isPausedRef.current;
+
+            if (currentPhase === 'idle' || paused) return;
+
+            // Bildirimi güncelle
+            if (currentPhase === 'focus') {
+                updateTimerNotification('focus', getElapsedSeconds(), false);
+            } else if (currentPhase === 'break') {
+                const remaining = getBreakRemaining();
+                updateTimerNotification('break', remaining, false);
+                // Break bitti mi?
+                if (remaining <= 0) {
+                    clearInterval(intervalRef.current!);
+                    intervalRef.current = null;
+                    Vibration.vibrate([0, 300, 150, 300]);
+                }
+            }
+        }, 1000);
+    }, [getElapsedSeconds, getBreakRemaining]);
+
+    const stopTick = useCallback(() => {
+        if (intervalRef.current) {
+            clearInterval(intervalRef.current);
+            intervalRef.current = null;
+        }
+    }, []);
+
+    // --- Session kaydet ---
+    const saveCurrentSession = useCallback(async (focusSec: number) => {
+        if (focusSec < 60 || !uid || !focusStartTimeRef.current) return;
+        const startedAt = new Date(focusStartTimeRef.current).toISOString();
+        const endedAt = new Date().toISOString();
         await createSession({
             userId: uid,
-            startedAt: startTimeRef.current.toISOString(),
-            endedAt: endTime.toISOString(),
-            durationSeconds: focusSec,
+            startedAt,
+            endedAt,
+            durationSeconds: Math.round(focusSec),
             breakDurationSeconds: 0,
             taskId: selectedTask?.id ?? null,
             taskTitle: selectedTask?.title ?? null,
         });
         if (selectedTask) {
-            await updateFocusTime({ taskId: selectedTask.id, additionalMinutes: Math.round(focusSec / 60) });
+            await updateFocusTime({
+                taskId: selectedTask.id,
+                additionalMinutes: Math.round(focusSec / 60),
+            });
         }
-    };
+    }, [uid, selectedTask, createSession, updateFocusTime]);
 
-    const handleStart = () => {
-        startTimeRef.current = new Date();
-        setElapsedSeconds(0);
-        setBreakSeconds(0);
-        setIsRunning(true);
-        setIsPaused(false);
+    // --- State'i AsyncStorage'a kaydet ---
+    const persistState = useCallback((
+        currentPhase: 'idle' | 'focus' | 'break',
+        currentIsPaused: boolean,
+    ) => {
+        if (currentPhase === 'idle') {
+            clearTimerState();
+            return;
+        }
+        saveTimerState({
+            phase: currentPhase,
+            phaseStartTime: phaseStartTimeRef.current,
+            breakDuration: breakDurationRef.current,
+            isPaused: currentIsPaused,
+            pausedAt: pausedAtRef.current,
+            focusStartTime: focusStartTimeRef.current,
+        });
+    }, []);
+
+    // --- Handlers ---
+    const handleStart = useCallback(() => {
+        const now = Date.now();
+        phaseStartTimeRef.current = now;
+        focusStartTimeRef.current = now;
+        pausedAtRef.current = null;
+        pausedDurationRef.current = 0;
+        breakDurationRef.current = 0;
+
         setPhase('focus');
-    };
-
-    const handlePause = () => setIsPaused(true);
-    const handleResume = () => setIsPaused(false);
-
-    const handleStopFocus = async () => {
-        if (intervalRef.current) clearInterval(intervalRef.current);
-        const endTime = new Date();
-        const focusSec = elapsedSeconds;
-        const breakSec = getBreakMinutes(focusSec, effectiveConfig) * 60;
-
-        // Save session immediately at break start (web approach)
-        await saveCurrentSession(focusSec, endTime);
-
-        setBreakSeconds(breakSec);
-        setPhase('break');
-        setIsRunning(true);
         setIsPaused(false);
-    };
+        startTick();
+        updateTimerNotification('focus', 0, false);
+        saveTimerState({
+            phase: 'focus',
+            phaseStartTime: now,
+            breakDuration: 0,
+            isPaused: false,
+            pausedAt: null,
+            focusStartTime: now,
+        });
+    }, [startTick]);
 
-    const handleStopBreak = () => {
-        if (intervalRef.current) clearInterval(intervalRef.current);
-        setIsRunning(false);
-        setIsPaused(false);
-        setPhase('idle');
-        setElapsedSeconds(0);
-        setBreakSeconds(0);
-    };
+    const handlePause = useCallback(() => {
+        pausedAtRef.current = Date.now();
+        setIsPaused(true);
+        stopTick();
+        const sec = phaseRef.current === 'focus' ? getElapsedSeconds() : getBreakRemaining();
+        updateTimerNotification(phaseRef.current as 'focus' | 'break', sec, true);
+        persistState(phaseRef.current, true);
+    }, [stopTick, getElapsedSeconds, getBreakRemaining, persistState]);
 
-    const handleNewSession = () => {
-        if (intervalRef.current) clearInterval(intervalRef.current);
-        handleStart();
-    };
-
-    const handleReset = async () => {
-        if (intervalRef.current) clearInterval(intervalRef.current);
-        if (phase === 'focus' && elapsedSeconds >= 60) {
-            await saveCurrentSession(elapsedSeconds, new Date());
+    const handleResume = useCallback(() => {
+        if (pausedAtRef.current) {
+            pausedDurationRef.current += Date.now() - pausedAtRef.current;
+            pausedAtRef.current = null;
         }
-        setIsRunning(false);
         setIsPaused(false);
+        startTick();
+        const sec = phaseRef.current === 'focus' ? getElapsedSeconds() : getBreakRemaining();
+        updateTimerNotification(phaseRef.current as 'focus' | 'break', sec, false);
+        persistState(phaseRef.current, false);
+    }, [startTick, getElapsedSeconds, getBreakRemaining, persistState]);
+
+    const handleStopFocus = useCallback(async () => {
+        stopTick();
+        const focusSec = getElapsedSeconds();
+        await saveCurrentSession(focusSec);
+
+        const breakSec = getBreakMinutes(focusSec, effectiveConfig) * 60;
+        breakDurationRef.current = breakSec;
+        phaseStartTimeRef.current = Date.now();
+        pausedAtRef.current = null;
+        pausedDurationRef.current = 0;
+
+        setPhase('break');
+        setIsPaused(false);
+        startTick();
+        updateTimerNotification('break', breakSec, false);
+        scheduleBreakEndNotification(breakSec);
+        saveTimerState({
+            phase: 'break',
+            phaseStartTime: phaseStartTimeRef.current,
+            breakDuration: breakSec,
+            isPaused: false,
+            pausedAt: null,
+            focusStartTime: focusStartTimeRef.current,
+        });
+    }, [stopTick, getElapsedSeconds, saveCurrentSession, effectiveConfig, startTick]);
+
+    const handleStopBreak = useCallback(() => {
+        stopTick();
         setPhase('idle');
-        setElapsedSeconds(0);
-        setBreakSeconds(0);
-        startTimeRef.current = null;
+        setIsPaused(false);
+        phaseStartTimeRef.current = 0;
+        pausedAtRef.current = null;
+        pausedDurationRef.current = 0;
+        breakDurationRef.current = 0;
+        cancelTimerNotifications();
+        clearTimerState();
+    }, [stopTick]);
+
+    const handleNewSession = useCallback(() => {
+        stopTick();
+        cancelTimerNotifications();
+        handleStart();
+    }, [stopTick, handleStart]);
+
+    const handleReset = useCallback(async () => {
+        stopTick();
+        if (phaseRef.current === 'focus') {
+            const focusSec = getElapsedSeconds();
+            if (focusSec >= 60) await saveCurrentSession(focusSec);
+        }
+        setPhase('idle');
+        setIsPaused(false);
+        phaseStartTimeRef.current = 0;
+        pausedAtRef.current = null;
+        pausedDurationRef.current = 0;
+        breakDurationRef.current = 0;
+        cancelTimerNotifications();
+        clearTimerState();
+    }, [stopTick, getElapsedSeconds, saveCurrentSession]);
+
+    const handleCloseApp = useCallback(() => {
+        handleReset().then(() => {
+            if (Platform.OS === 'android') {
+                BackHandler.exitApp();
+            }
+        });
+    }, [handleReset]);
+
+    // --- Bildirim aksiyonları ---
+    const notificationHandlers = {
+        pause: handlePause,
+        resume: handleResume,
+        stopFocus: handleStopFocus,
+        endBreak: handleStopBreak,
+        closeApp: handleCloseApp,
     };
+
+    // --- AppState: arka plandan ön plana dönünce timer'ı senkronize et ---
+    useEffect(() => {
+        const onAppStateChange = async (nextState: AppStateStatus) => {
+            if (nextState === 'active') {
+                // Ön plana döndü — AsyncStorage'dan state yükle ve recalculate
+                const saved = await loadTimerState();
+                if (!saved || saved.phase === 'idle') return;
+
+                phaseStartTimeRef.current = saved.phaseStartTime;
+                breakDurationRef.current = saved.breakDuration;
+                focusStartTimeRef.current = saved.focusStartTime;
+                pausedAtRef.current = saved.pausedAt;
+                pausedDurationRef.current = 0;
+
+                setPhase(saved.phase);
+                setIsPaused(saved.isPaused);
+
+                if (!saved.isPaused) {
+                    startTick();
+                }
+            } else if (nextState === 'background' || nextState === 'inactive') {
+                persistState(phaseRef.current, isPausedRef.current);
+            }
+        };
+
+        const sub = AppState.addEventListener('change', onAppStateChange);
+        return () => sub.remove();
+    }, [startTick, persistState]);
+
+    // --- Bildirim response listener (buton tıklamaları) ---
+    useEffect(() => {
+        const sub = addNotificationResponseListener(action => {
+            handleNotificationAction(action, notificationHandlers);
+        });
+        return () => sub.remove();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [handlePause, handleResume, handleStopFocus, handleStopBreak, handleCloseApp]);
+
+    // --- Cleanup ---
+    useEffect(() => {
+        return () => { stopTick(); };
+    }, [stopTick]);
 
     if (configLoading) {
         return (
@@ -155,8 +332,10 @@ export default function TimerScreen({ selectedTask }: Props) {
         );
     }
 
+    // UI için anlık değerleri hesapla
+    const elapsedSeconds = phase === 'focus' ? getElapsedSeconds() : 0;
+    const breakRemaining = phase === 'break' ? getBreakRemaining() : 0;
     const breakMinutes = getBreakMinutes(elapsedSeconds, effectiveConfig);
-    const breakDisplay = Math.max(0, breakSeconds);
 
     return (
         <View style={styles.container}>
@@ -192,10 +371,10 @@ export default function TimerScreen({ selectedTask }: Props) {
                 {phase === 'break' && (
                     <>
                         <Text style={[styles.timerLabel, { color: '#22c55e' }]}>
-                            {breakSeconds === 0 ? t('timer.rechargingFocus') : t('timer.breakTime')}
+                            {breakRemaining === 0 ? t('timer.rechargingFocus') : t('timer.breakTime')}
                         </Text>
                         <Text style={[styles.timerDisplay, { color: '#22c55e' }]}>
-                            {formatTime(breakDisplay)}
+                            {formatTime(breakRemaining)}
                         </Text>
                     </>
                 )}
@@ -230,7 +409,7 @@ export default function TimerScreen({ selectedTask }: Props) {
                 )}
                 {phase === 'break' && (
                     <View style={styles.breakButtonsWrapper}>
-                        {isRunning && (
+                        {breakRemaining > 0 && (
                             <TouchableOpacity
                                 style={[styles.mainBtn, styles.pauseBtn]}
                                 onPress={isPaused ? handleResume : handlePause}

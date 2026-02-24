@@ -23,8 +23,9 @@ const languageDetector: any = {
                 return callback(savedLanguage);
             }
 
-            const deviceLanguage = Localization.getLocales()[0].languageCode;
-            callback(deviceLanguage === 'tr' ? 'tr' : 'en');
+            const deviceLang = Localization.getLocales()[0]?.languageCode ?? 'en';
+            const supported = ['tr', 'en'];
+            callback(supported.includes(deviceLang) ? deviceLang : 'en');
         } catch (error) {
             console.log('Error reading language', error);
             callback('en');

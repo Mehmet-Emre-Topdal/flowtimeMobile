@@ -23,28 +23,53 @@ export default function SettingsScreen({ onClose }: Props) {
     const effectiveConfig = config ?? DEFAULT_CONFIG;
     const [intervals, setIntervals] = useState<FlowtimeInterval[]>(effectiveConfig.intervals);
 
-    const handleChange = (index: number, field: keyof FlowtimeInterval, value: string) => {
+    // max değişince bir sonraki aralığın min'i otomatik güncellenir (web ile aynı mantık)
+    const handleBoundaryChange = (index: number, value: string) => {
+        const num = parseInt(value, 10);
+        if (value !== '' && (isNaN(num) || num < 0)) return;
+        const parsed = value === '' ? 0 : num;
+        // Bir sonraki aralığın max'ına eşit veya fazla olamaz
+        if (index + 1 < intervals.length && parsed >= intervals[index + 1].max) return;
+        const newIntervals = [...intervals];
+        newIntervals[index] = { ...newIntervals[index], max: parsed };
+        if (index + 1 < newIntervals.length) {
+            newIntervals[index + 1] = { ...newIntervals[index + 1], min: parsed };
+        }
+        setIntervals(newIntervals);
+    };
+
+    const handleBreakChange = (index: number, value: string) => {
         const num = parseInt(value, 10);
         if (value !== '' && (isNaN(num) || num < 0)) return;
         setIntervals(prev =>
-            prev.map((iv, i) => i === index ? { ...iv, [field]: value === '' ? 0 : num } : iv)
+            prev.map((iv, i) => i === index ? { ...iv, break: value === '' ? 0 : num } : iv)
         );
     };
 
     const handleAdd = () => {
-        const last = intervals[intervals.length - 1];
-        setIntervals(prev => [
-            ...prev,
-            { min: last ? last.max : 0, max: last ? last.max + 30 : 30, break: 10 },
-        ]);
+        const newIntervals = [...intervals];
+        const lastInterval = newIntervals[newIntervals.length - 1];
+        const splitPoint = lastInterval.min + 10;
+        newIntervals[newIntervals.length - 1] = { ...lastInterval, max: splitPoint };
+        newIntervals.push({ min: splitPoint, max: 999, break: lastInterval.break + 5 });
+        setIntervals(newIntervals);
     };
 
     const handleRemove = (index: number) => {
-        if (intervals.length <= 1) {
-            Alert.alert(t('settings.removeIntervalError', 'En az 1 aralık gerekli'));
+        if (intervals.length <= 2) {
+            Alert.alert(t('settings.removeIntervalError', 'En az 2 aralık gerekli'));
             return;
         }
-        setIntervals(prev => prev.filter((_, i) => i !== index));
+        const newIntervals = [...intervals];
+        if (index === 0) {
+            newIntervals[1] = { ...newIntervals[1], min: 0 };
+        } else if (index === newIntervals.length - 1) {
+            newIntervals[index - 1] = { ...newIntervals[index - 1], max: 999 };
+        } else {
+            newIntervals[index - 1] = { ...newIntervals[index - 1], max: newIntervals[index + 1].min };
+        }
+        newIntervals.splice(index, 1);
+        setIntervals(newIntervals);
     };
 
     const changeLanguage = (lng: string) => {
@@ -52,6 +77,17 @@ export default function SettingsScreen({ onClose }: Props) {
     };
 
     const handleSave = async () => {
+        // Son aralık hariç tüm aralıklarda max > min olmalı
+        const hasInvalidInterval = intervals.some((iv, i) =>
+            i < intervals.length - 1 && iv.max <= iv.min
+        );
+        if (hasInvalidInterval) {
+            Alert.alert(
+                t('settings.invalidIntervalsTitle', 'Geçersiz Aralık'),
+                t('settings.invalidIntervalsDesc', 'Her aralığın son değeri başlangıç değerinden büyük olmalıdır.')
+            );
+            return;
+        }
         const newConfig: UserConfig = { intervals };
         await updateConfig({ uid, config: newConfig });
         onClose();
@@ -81,38 +117,44 @@ export default function SettingsScreen({ onClose }: Props) {
                 </Text>
 
                 <View style={styles.tableHeader}>
-                    <Text style={[styles.colLabel, styles.colMin]}>Min</Text>
-                    <Text style={[styles.colLabel, styles.colMax]}>Max</Text>
+                    <Text style={[styles.colLabel, styles.colRange]}>{t('settings.focusRange')}</Text>
                     <Text style={[styles.colLabel, styles.colBreak]}>{t('settings.breakDuration')}</Text>
                     <View style={styles.colAction} />
                 </View>
 
                 {intervals.map((iv, index) => (
                     <View key={index} style={styles.row}>
-                        <TextInput
-                            style={[styles.input, styles.colMin]}
-                            value={String(iv.min)}
-                            onChangeText={v => handleChange(index, 'min', v)}
-                            keyboardType="numeric"
-                            placeholder="0"
-                            placeholderTextColor="#555"
-                        />
-                        <TextInput
-                            style={[styles.input, styles.colMax]}
-                            value={String(iv.max)}
-                            onChangeText={v => handleChange(index, 'max', v)}
-                            keyboardType="numeric"
-                            placeholder="999"
-                            placeholderTextColor="#555"
-                        />
-                        <TextInput
-                            style={[styles.input, styles.colBreak]}
-                            value={String(iv.break)}
-                            onChangeText={v => handleChange(index, 'break', v)}
-                            keyboardType="numeric"
-                            placeholder="5"
-                            placeholderTextColor="#555"
-                        />
+                        {/* Odaklanma aralığı: min (sabit) – max (düzenlenebilir) */}
+                        <View style={[styles.rangeCell, styles.colRange]}>
+                            <Text style={styles.rangeStaticText}>
+                                {index === 0 ? '0' : iv.min}
+                            </Text>
+                            <Text style={styles.rangeDash}>–</Text>
+                            {index === intervals.length - 1 ? (
+                                <Text style={styles.rangeStaticText}>∞</Text>
+                            ) : (
+                                <TextInput
+                                    style={styles.rangeInput}
+                                    value={String(iv.max)}
+                                    onChangeText={v => handleBoundaryChange(index, v)}
+                                    keyboardType="numeric"
+                                    placeholderTextColor="#555"
+                                />
+                            )}
+                        </View>
+
+                        {/* Mola süresi: düzenlenebilir */}
+                        <View style={[styles.breakCell, styles.colBreak]}>
+                            <TextInput
+                                style={styles.breakInput}
+                                value={String(iv.break)}
+                                onChangeText={v => handleBreakChange(index, v)}
+                                keyboardType="numeric"
+                                placeholder="5"
+                                placeholderTextColor="#4f51a0"
+                            />
+                        </View>
+
                         <TouchableOpacity
                             style={[styles.colAction, styles.removeBtn]}
                             onPress={() => handleRemove(index)}
@@ -184,20 +226,35 @@ const styles = StyleSheet.create({
         marginBottom: 6, paddingHorizontal: 2,
     },
     colLabel: { color: '#666', fontSize: 12, fontWeight: '600', textAlign: 'center' },
+    colRange: { flex: 3 },
+    colBreak: { flex: 2 },
+    colAction: { flex: 1, alignItems: 'center' },
     row: {
         flexDirection: 'row', alignItems: 'center',
         marginBottom: 8, gap: 8,
     },
-    input: {
-        backgroundColor: '#1a1a1a', color: '#fff', borderRadius: 8,
-        paddingHorizontal: 10, paddingVertical: 10,
-        fontSize: 14, borderWidth: 1, borderColor: '#2a2a2a',
-        textAlign: 'center',
+    rangeCell: {
+        flexDirection: 'row', alignItems: 'center',
+        backgroundColor: '#1a1a1a', borderRadius: 8,
+        paddingHorizontal: 10, paddingVertical: 4,
+        borderWidth: 1, borderColor: '#2a2a2a', gap: 4,
     },
-    colMin: { flex: 2 },
-    colMax: { flex: 2 },
-    colBreak: { flex: 2 },
-    colAction: { flex: 1, alignItems: 'center' },
+    rangeStaticText: { color: '#9a9a9a', fontSize: 14, minWidth: 24, textAlign: 'center' },
+    rangeDash: { color: '#3a3a3a', fontSize: 14 },
+    rangeInput: {
+        flex: 1, color: '#fff', fontSize: 14,
+        textAlign: 'center', paddingVertical: 6,
+    },
+    breakCell: {
+        backgroundColor: 'rgba(99, 102, 241, 0.1)', borderRadius: 8,
+        paddingHorizontal: 10, paddingVertical: 4,
+        borderWidth: 1, borderColor: 'rgba(99, 102, 241, 0.2)',
+        alignItems: 'center',
+    },
+    breakInput: {
+        color: '#6366f1', fontSize: 14, fontWeight: '600',
+        textAlign: 'center', paddingVertical: 6, width: '100%',
+    },
     removeBtn: { paddingVertical: 10, alignItems: 'center', justifyContent: 'center' },
     removeBtnText: { color: '#ef4444', fontSize: 20, fontWeight: '600' },
     addBtn: {
