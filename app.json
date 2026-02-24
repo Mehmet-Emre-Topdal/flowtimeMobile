@@ -23,11 +23,21 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.anonymous.flowtimeMobile",
-      "googleServicesFile": "./google-services.json"
+      "googleServicesFile": "./google-services.json",
+      "permissions": [
+        "android.permission.SCHEDULE_EXACT_ALARM",
+        "android.permission.VIBRATE"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "scheme": "flowtimemobile"
+    "scheme": "flowtimemobile",
+    "extra": {
+      "eas": {
+        "projectId": "f49f0c90-b9e3-42e0-8587-5a9b6d0b0715"
+      }
+    },
+    "owner": "emre-topdal"
   }
 }
