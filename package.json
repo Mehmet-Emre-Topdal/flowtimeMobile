@@ -9,6 +9,7 @@
     "web": "expo start --web"
   },
   "dependencies": {
+    "@expo/config-plugins": "^54.0.5-canary-20260119-17896bf",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@reduxjs/toolkit": "^2.11.2",
     "expo": "~54.0.33",

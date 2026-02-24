@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
     View, Text, TouchableOpacity, StyleSheet, ActivityIndicator,
-    Vibration, AppState, AppStateStatus, BackHandler, Platform,
+    Vibration, AppState, AppStateStatus,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useAppSelector } from '../hooks/storeHooks';
@@ -13,11 +13,6 @@ import { DEFAULT_CONFIG, UserConfig } from '../types/config';
 import {
     saveTimerState, loadTimerState, clearTimerState,
 } from '../lib/timerStorage';
-import {
-    updateTimerNotification, cancelTimerNotifications,
-    scheduleBreakEndNotification, handleNotificationAction,
-    addNotificationResponseListener, NotificationAction,
-} from '../lib/notifications';
 
 interface Props {
     selectedTask: TaskDto | null;
@@ -96,12 +91,8 @@ export default function TimerScreen({ selectedTask }: Props) {
 
             if (currentPhase === 'idle' || paused) return;
 
-            // Bildirimi güncelle
-            if (currentPhase === 'focus') {
-                updateTimerNotification('focus', getElapsedSeconds(), false);
-            } else if (currentPhase === 'break') {
+            if (currentPhase === 'break') {
                 const remaining = getBreakRemaining();
-                updateTimerNotification('break', remaining, false);
                 // Break bitti mi?
                 if (remaining <= 0) {
                     clearInterval(intervalRef.current!);
@@ -172,7 +163,6 @@ export default function TimerScreen({ selectedTask }: Props) {
         setPhase('focus');
         setIsPaused(false);
         startTick();
-        updateTimerNotification('focus', 0, false);
         saveTimerState({
             phase: 'focus',
             phaseStartTime: now,
@@ -187,8 +177,6 @@ export default function TimerScreen({ selectedTask }: Props) {
         pausedAtRef.current = Date.now();
         setIsPaused(true);
         stopTick();
-        const sec = phaseRef.current === 'focus' ? getElapsedSeconds() : getBreakRemaining();
-        updateTimerNotification(phaseRef.current as 'focus' | 'break', sec, true);
         persistState(phaseRef.current, true);
     }, [stopTick, getElapsedSeconds, getBreakRemaining, persistState]);
 
@@ -199,10 +187,8 @@ export default function TimerScreen({ selectedTask }: Props) {
         }
         setIsPaused(false);
         startTick();
-        const sec = phaseRef.current === 'focus' ? getElapsedSeconds() : getBreakRemaining();
-        updateTimerNotification(phaseRef.current as 'focus' | 'break', sec, false);
         persistState(phaseRef.current, false);
-    }, [startTick, getElapsedSeconds, getBreakRemaining, persistState]);
+    }, [startTick, persistState]);
 
     const handleStopFocus = useCallback(async () => {
         stopTick();
@@ -218,8 +204,6 @@ export default function TimerScreen({ selectedTask }: Props) {
         setPhase('break');
         setIsPaused(false);
         startTick();
-        updateTimerNotification('break', breakSec, false);
-        scheduleBreakEndNotification(breakSec);
         saveTimerState({
             phase: 'break',
             phaseStartTime: phaseStartTimeRef.current,
@@ -238,13 +222,11 @@ export default function TimerScreen({ selectedTask }: Props) {
         pausedAtRef.current = null;
         pausedDurationRef.current = 0;
         breakDurationRef.current = 0;
-        cancelTimerNotifications();
         clearTimerState();
     }, [stopTick]);
 
     const handleNewSession = useCallback(() => {
         stopTick();
-        cancelTimerNotifications();
         handleStart();
     }, [stopTick, handleStart]);
 
@@ -260,26 +242,8 @@ export default function TimerScreen({ selectedTask }: Props) {
         pausedAtRef.current = null;
         pausedDurationRef.current = 0;
         breakDurationRef.current = 0;
-        cancelTimerNotifications();
         clearTimerState();
     }, [stopTick, getElapsedSeconds, saveCurrentSession]);
-
-    const handleCloseApp = useCallback(() => {
-        handleReset().then(() => {
-            if (Platform.OS === 'android') {
-                BackHandler.exitApp();
-            }
-        });
-    }, [handleReset]);
-
-    // --- Bildirim aksiyonları ---
-    const notificationHandlers = {
-        pause: handlePause,
-        resume: handleResume,
-        stopFocus: handleStopFocus,
-        endBreak: handleStopBreak,
-        closeApp: handleCloseApp,
-    };
 
     // --- AppState: arka plandan ön plana dönünce timer'ı senkronize et ---
     useEffect(() => {
@@ -309,15 +273,6 @@ export default function TimerScreen({ selectedTask }: Props) {
         const sub = AppState.addEventListener('change', onAppStateChange);
         return () => sub.remove();
     }, [startTick, persistState]);
-
-    // --- Bildirim response listener (buton tıklamaları) ---
-    useEffect(() => {
-        const sub = addNotificationResponseListener(action => {
-            handleNotificationAction(action, notificationHandlers);
-        });
-        return () => sub.remove();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [handlePause, handleResume, handleStopFocus, handleStopBreak, handleCloseApp]);
 
     // --- Cleanup ---
     useEffect(() => {
