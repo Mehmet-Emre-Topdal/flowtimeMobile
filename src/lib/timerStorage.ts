@@ -14,8 +14,8 @@ export interface PersistedTimerState {
 export async function saveTimerState(state: PersistedTimerState): Promise<void> {
     try {
         await AsyncStorage.setItem(KEY, JSON.stringify(state));
-    } catch {
-        // ignore
+    } catch (err) {
+        console.warn('[timerStorage] saveTimerState failed:', err);
     }
 }
 
@@ -24,7 +24,8 @@ export async function loadTimerState(): Promise<PersistedTimerState | null> {
         const raw = await AsyncStorage.getItem(KEY);
         if (!raw) return null;
         return JSON.parse(raw) as PersistedTimerState;
-    } catch {
+    } catch (err) {
+        console.warn('[timerStorage] loadTimerState failed:', err);
         return null;
     }
 }
@@ -32,7 +33,7 @@ export async function loadTimerState(): Promise<PersistedTimerState | null> {
 export async function clearTimerState(): Promise<void> {
     try {
         await AsyncStorage.removeItem(KEY);
-    } catch {
-        // ignore
+    } catch (err) {
+        console.warn('[timerStorage] clearTimerState failed:', err);
     }
 }

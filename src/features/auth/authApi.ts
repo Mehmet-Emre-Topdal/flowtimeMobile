@@ -6,9 +6,27 @@ import {
     signOut,
     GoogleAuthProvider,
     signInWithCredential,
+    User,
 } from 'firebase/auth';
 import { auth } from '../../lib/firebase';
 import { UserDto } from '../../types/auth';
+
+function toUserDto(user: User, overrides?: Partial<UserDto>): { data: UserDto } {
+    return {
+        data: {
+            uid: user.uid,
+            email: user.email,
+            displayName: user.displayName,
+            photoURL: user.photoURL,
+            ...overrides,
+        },
+    };
+}
+
+function mapAuthError(error: unknown, messages: Record<string, string>, fallback: string) {
+    const code = (error as { code?: string }).code ?? '';
+    return { error: { status: 'CUSTOM_ERROR' as const, error: messages[code] ?? fallback } };
+}
 
 export const authApi = baseApi.injectEndpoints({
     endpoints: (builder) => ({
@@ -17,25 +35,15 @@ export const authApi = baseApi.injectEndpoints({
             queryFn: async ({ email, password }) => {
                 try {
                     const result = await signInWithEmailAndPassword(auth, email, password);
-                    const user = result.user;
-                    return {
-                        data: {
-                            uid: user.uid,
-                            email: user.email,
-                            displayName: user.displayName,
-                            photoURL: user.photoURL,
-                        },
-                    };
+                    return toUserDto(result.user);
                 } catch (error) {
-                    const code = (error as { code?: string }).code;
-                    const messages: Record<string, string> = {
+                    return mapAuthError(error, {
                         'auth/user-not-found': 'Bu e-posta ile kayıtlı hesap bulunamadı.',
                         'auth/wrong-password': 'Hatalı e-posta veya şifre.',
                         'auth/invalid-credential': 'Hatalı e-posta veya şifre.',
                         'auth/too-many-requests': 'Çok fazla deneme. Lütfen daha sonra tekrar deneyin.',
                         'auth/invalid-email': 'Geçersiz e-posta adresi.',
-                    };
-                    return { error: { status: 'CUSTOM_ERROR', error: messages[code ?? ''] ?? 'Giriş başarısız.' } };
+                    }, 'Giriş başarısız.');
                 }
             },
         }),
@@ -45,23 +53,13 @@ export const authApi = baseApi.injectEndpoints({
                 try {
                     const result = await createUserWithEmailAndPassword(auth, email, password);
                     await updateProfile(result.user, { displayName });
-                    const user = result.user;
-                    return {
-                        data: {
-                            uid: user.uid,
-                            email: user.email,
-                            displayName,
-                            photoURL: user.photoURL,
-                        },
-                    };
+                    return toUserDto(result.user, { displayName });
                 } catch (error) {
-                    const code = (error as { code?: string }).code;
-                    const messages: Record<string, string> = {
+                    return mapAuthError(error, {
                         'auth/email-already-in-use': 'Bu e-posta zaten kayıtlı.',
                         'auth/weak-password': 'Şifre en az 6 karakter olmalı.',
                         'auth/invalid-email': 'Geçersiz e-posta adresi.',
-                    };
-                    return { error: { status: 'CUSTOM_ERROR', error: messages[code ?? ''] ?? 'Kayıt başarısız.' } };
+                    }, 'Kayıt başarısız.');
                 }
             },
         }),
@@ -71,22 +69,12 @@ export const authApi = baseApi.injectEndpoints({
                 try {
                     const credential = GoogleAuthProvider.credential(idToken);
                     const result = await signInWithCredential(auth, credential);
-                    const user = result.user;
-                    return {
-                        data: {
-                            uid: user.uid,
-                            email: user.email,
-                            displayName: user.displayName,
-                            photoURL: user.photoURL,
-                        },
-                    };
+                    return toUserDto(result.user);
                 } catch (error) {
-                    const code = (error as { code?: string }).code;
-                    const messages: Record<string, string> = {
+                    return mapAuthError(error, {
                         'auth/invalid-credential': 'Google ile giriş başarısız.',
                         'auth/account-exists-with-different-credential': 'Bu e-posta farklı bir yöntemle kayıtlı.',
-                    };
-                    return { error: { status: 'CUSTOM_ERROR', error: messages[code ?? ''] ?? 'Google ile giriş başarısız.' } };
+                    }, 'Google ile giriş başarısız.');
                 }
             },
         }),

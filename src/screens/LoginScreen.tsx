@@ -7,10 +7,11 @@ import { useTranslation } from 'react-i18next';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { useLoginWithEmailMutation, useRegisterWithEmailMutation, useLoginWithGoogleMutation } from '../features/auth/authApi';
+import { extractErrorMessage } from '../lib/errorUtils';
 
 WebBrowser.maybeCompleteAuthSession();
 
-const GOOGLE_CLIENT_ID = '290414008129-479nqms4n5oodido255jds092lomtlmn.apps.googleusercontent.com';
+const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID ?? '';
 
 type Mode = 'login' | 'register';
 
@@ -36,8 +37,7 @@ export default function LoginScreen() {
             const idToken = response.authentication?.idToken;
             if (idToken) {
                 loginWithGoogle({ idToken }).unwrap().catch((err) => {
-                    const e = err as { error?: string };
-                    setError(e?.error ?? t('auth.googleFailed'));
+                    setError(extractErrorMessage(err, t('auth.googleFailed')));
                 });
             } else {
                 setError(t('auth.googleNoToken'));
@@ -63,8 +63,7 @@ export default function LoginScreen() {
                 await registerWithEmail({ email, password, displayName }).unwrap();
             }
         } catch (err) {
-            const e = err as { error?: string };
-            setError(e?.error ?? t('auth.genericError'));
+            setError(extractErrorMessage(err, t('auth.genericError')));
         }
     };
 

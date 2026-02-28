@@ -12,12 +12,15 @@ import {
 } from '../features/assistant/api/chatHistoryApi';
 import { ChatMessage } from '../types/assistant';
 
+const SCROLL_DELAY_MS = 100;
+
 export default function AssistantScreen() {
     const { t } = useTranslation();
     const [input, setInput] = useState('');
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [summary, setSummary] = useState<string | null>(null);
     const [hasWelcomed, setHasWelcomed] = useState(false);
+    const [welcomeError, setWelcomeError] = useState(false);
     const flatListRef = useRef<FlatList>(null);
     const initializedRef = useRef(false);
 
@@ -41,6 +44,7 @@ export default function AssistantScreen() {
     const triggerWelcome = async () => {
         if (hasWelcomed) return;
         setHasWelcomed(true);
+        setWelcomeError(false);
         try {
             const result = await sendMessage({
                 message: '',
@@ -50,8 +54,16 @@ export default function AssistantScreen() {
             setMessages(result.updatedHistory);
             setSummary(result.updatedSummary);
             await saveChatHistory({ messages: result.updatedHistory, summary: result.updatedSummary });
-            setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
-        } catch { }
+            setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), SCROLL_DELAY_MS);
+        } catch (err) {
+            console.warn('[Assistant] triggerWelcome failed:', err);
+            setHasWelcomed(false);
+            setWelcomeError(true);
+        }
+    };
+
+    const handleRetryWelcome = () => {
+        triggerWelcome();
     };
 
     const isLoading = historyLoading || isSending;
@@ -79,7 +91,7 @@ export default function AssistantScreen() {
             setMessages(result.updatedHistory);
             setSummary(result.updatedSummary);
             await saveChatHistory({ messages: result.updatedHistory, summary: result.updatedSummary });
-            setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+            setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), SCROLL_DELAY_MS);
         } catch {
             const errMsg: ChatMessage = {
                 role: 'assistant',
@@ -135,21 +147,29 @@ export default function AssistantScreen() {
 
             {messages.length === 0 ? (
                 <View style={styles.emptyArea}>
-                    {isSending
-                        ? <ActivityIndicator color="#6366f1" />
-                        : <>
+                    {isSending ? (
+                        <ActivityIndicator color="#6366f1" />
+                    ) : welcomeError ? (
+                        <>
+                            <Text style={styles.errorTitle}>{t('assistant.loadError', 'Asistan yüklenemedi')}</Text>
+                            <TouchableOpacity style={styles.retryBtn} onPress={handleRetryWelcome}>
+                                <Text style={styles.retryBtnText}>{t('common.retry', 'Tekrar Dene')}</Text>
+                            </TouchableOpacity>
+                        </>
+                    ) : (
+                        <>
                             <Text style={styles.emptyTitle}>{t('assistant.welcomeTitle')}</Text>
                             <Text style={styles.emptySubtitle}>
                                 {t('assistant.welcomeText')}
                             </Text>
                         </>
-                    }
+                    )}
                 </View>
             ) : (
                 <FlatList
                     ref={flatListRef}
                     data={messages}
-                    keyExtractor={(_, i) => i.toString()}
+                    keyExtractor={(msg) => `${msg.timestamp}-${msg.role}`}
                     renderItem={renderMessage}
                     contentContainerStyle={styles.messageList}
                     onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
@@ -200,6 +220,12 @@ const styles = StyleSheet.create({
     emptyArea: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 },
     emptyTitle: { color: '#fff', fontSize: 22, fontWeight: 'bold', marginBottom: 12 },
     emptySubtitle: { color: '#555', fontSize: 14, textAlign: 'center', lineHeight: 20 },
+    errorTitle: { color: '#888', fontSize: 15, marginBottom: 16, textAlign: 'center' },
+    retryBtn: {
+        paddingVertical: 10, paddingHorizontal: 24, borderRadius: 8,
+        borderWidth: 1, borderColor: '#2a2a2a',
+    },
+    retryBtnText: { color: '#6366f1', fontSize: 14, fontWeight: '600' },
     messageList: { padding: 16, paddingBottom: 8 },
     bubble: {
         maxWidth: '82%', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10,

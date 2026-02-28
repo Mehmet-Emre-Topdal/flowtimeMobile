@@ -10,6 +10,7 @@ import TimerScreen from './TimerScreen';
 import AnalyticsScreen from './AnalyticsScreen';
 import AssistantScreen from './AssistantScreen';
 import SettingsScreen from './SettingsScreen';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 
 type Tab = 'tasks' | 'timer' | 'analytics' | 'assistant';
 
@@ -46,27 +47,37 @@ export default function MainScreen() {
 
             <View style={styles.content}>
                 {activeTab === 'tasks' && (
-                    <TasksScreen
-                        selectedTaskId={selectedTask?.id ?? null}
-                        onSelectTask={handleSelectTask}
-                    />
+                    <ErrorBoundary>
+                        <TasksScreen
+                            selectedTaskId={selectedTask?.id ?? null}
+                            onSelectTask={handleSelectTask}
+                        />
+                    </ErrorBoundary>
                 )}
                 {/* TimerScreen her zaman mount'ta kalır; tab değişince sadece gizlenir.
                     Bu sayede timer state (refs) tab geçişlerinde sıfırlanmaz. */}
-                <View style={{ display: activeTab === 'timer' ? 'flex' : 'none', flex: 1 }}>
-                    <TimerScreen selectedTask={selectedTask} />
-                </View>
+                <ErrorBoundary>
+                    <View style={{ display: activeTab === 'timer' ? 'flex' : 'none', flex: 1 }}>
+                        <TimerScreen selectedTask={selectedTask} />
+                    </View>
+                </ErrorBoundary>
                 {activeTab === 'analytics' && (
-                    <AnalyticsScreen />
+                    <ErrorBoundary>
+                        <AnalyticsScreen />
+                    </ErrorBoundary>
                 )}
                 {activeTab === 'assistant' && (
-                    <AssistantScreen />
+                    <ErrorBoundary>
+                        <AssistantScreen />
+                    </ErrorBoundary>
                 )}
             </View>
 
             <Modal visible={showSettings} animationType="slide">
                 <SafeAreaView style={{ flex: 1, backgroundColor: '#0f0f0f' }}>
-                    <SettingsScreen onClose={() => setShowSettings(false)} />
+                    <ErrorBoundary>
+                        <SettingsScreen onClose={() => setShowSettings(false)} />
+                    </ErrorBoundary>
                 </SafeAreaView>
             </Modal>
 

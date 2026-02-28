@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
-    View, Text, TextInput, TouchableOpacity, FlatList,
-    ActivityIndicator, StyleSheet, Alert, Modal,
+    View, Text, TouchableOpacity, FlatList,
+    ActivityIndicator, StyleSheet, Alert,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useAppSelector } from '../hooks/storeHooks';
@@ -14,6 +14,9 @@ import {
     useDeleteTaskMutation,
 } from '../features/kanban/api/tasksApi';
 import { TaskDto } from '../types/task';
+import { NewTaskModal } from './tasks/NewTaskModal';
+import { EditTaskModal } from './tasks/EditTaskModal';
+import { StatusPickerModal } from './tasks/StatusPickerModal';
 
 interface Props {
     selectedTaskId: string | null;
@@ -33,14 +36,7 @@ export default function TasksScreen({ selectedTaskId, onSelectTask }: Props) {
     const [deleteTask] = useDeleteTaskMutation();
 
     const [showNewTask, setShowNewTask] = useState(false);
-    const [newTitle, setNewTitle] = useState('');
-    const [newDesc, setNewDesc] = useState('');
-    const [isCreating, setIsCreating] = useState(false);
-
     const [editingTask, setEditingTask] = useState<TaskDto | null>(null);
-    const [editTitle, setEditTitle] = useState('');
-    const [editDesc, setEditDesc] = useState('');
-    const [isSaving, setIsSaving] = useState(false);
     const [statusPickerTask, setStatusPickerTask] = useState<TaskDto | null>(null);
 
     const statusPriority: Record<string, number> = { inprogress: 0, todo: 1, done: 2 };
@@ -48,34 +44,21 @@ export default function TasksScreen({ selectedTaskId, onSelectTask }: Props) {
         (a, b) => (statusPriority[a.status] ?? 1) - (statusPriority[b.status] ?? 1)
     );
 
-    const handleCreate = async () => {
-        if (!newTitle.trim() || !uid) return;
-        setIsCreating(true);
+    const handleCreate = async (title: string, desc: string) => {
         await createTask({
             userId: uid,
-            task: { title: newTitle.trim(), description: newDesc.trim(), status: 'todo' },
+            task: { title, description: desc, status: 'todo' },
             order: tasks.length,
         });
-        setNewTitle('');
-        setNewDesc('');
-        setIsCreating(false);
         setShowNewTask(false);
     };
 
-    const handleOpenEdit = (task: TaskDto) => {
-        setEditingTask(task);
-        setEditTitle(task.title);
-        setEditDesc(task.description ?? '');
-    };
-
-    const handleSaveEdit = async () => {
-        if (!editingTask || !editTitle.trim()) return;
-        setIsSaving(true);
+    const handleSaveEdit = async (title: string, desc: string) => {
+        if (!editingTask) return;
         await updateTask({
             taskId: editingTask.id,
-            updates: { title: editTitle.trim(), description: editDesc.trim() },
+            updates: { title, description: desc },
         });
-        setIsSaving(false);
         setEditingTask(null);
     };
 
@@ -87,7 +70,14 @@ export default function TasksScreen({ selectedTaskId, onSelectTask }: Props) {
                 onPress: async () => {
                     if (selectedTaskId === task.id) onSelectTask(null);
                     setEditingTask(null);
-                    await deleteTask({ taskId: task.id });
+                    try {
+                        await deleteTask({ taskId: task.id });
+                    } catch {
+                        Alert.alert(
+                            t('common.error', 'Hata'),
+                            t('tasks.deleteError', 'Görev silinirken bir hata oluştu.')
+                        );
+                    }
                 },
             },
         ]);
@@ -98,16 +88,19 @@ export default function TasksScreen({ selectedTaskId, onSelectTask }: Props) {
             { text: t('common.cancel'), style: 'cancel' },
             {
                 text: t('common.archive'), style: 'destructive',
-                onPress: () => {
+                onPress: async () => {
                     if (selectedTaskId === task.id) onSelectTask(null);
-                    archiveTask({ taskId: task.id });
+                    try {
+                        await archiveTask({ taskId: task.id });
+                    } catch {
+                        Alert.alert(
+                            t('common.error', 'Hata'),
+                            t('tasks.archiveError', 'Görev arşivlenirken bir hata oluştu.')
+                        );
+                    }
                 },
             },
         ]);
-    };
-
-    const handleStatusPress = (task: TaskDto) => {
-        setStatusPickerTask(task);
     };
 
     const handleStatusSelect = (status: 'todo' | 'inprogress' | 'done') => {
@@ -146,12 +139,12 @@ export default function TasksScreen({ selectedTaskId, onSelectTask }: Props) {
                 <View style={styles.taskActions}>
                     <TouchableOpacity
                         style={[styles.statusBadge, { backgroundColor: statusColor(item.status) }]}
-                        onPress={() => handleStatusPress(item)}
+                        onPress={() => setStatusPickerTask(item)}
                     >
                         <Text style={styles.statusText}>{statusLabel(item.status)}</Text>
                     </TouchableOpacity>
                     <View style={styles.actionButtons}>
-                        <TouchableOpacity onPress={() => handleOpenEdit(item)} style={styles.iconBtn}>
+                        <TouchableOpacity onPress={() => setEditingTask(item)} style={styles.iconBtn}>
                             <Text style={styles.iconBtnText}>✎</Text>
                         </TouchableOpacity>
                         <TouchableOpacity onPress={() => handleArchive(item)} style={styles.iconBtn}>
@@ -179,139 +172,28 @@ export default function TasksScreen({ selectedTaskId, onSelectTask }: Props) {
             ) : (
                 <FlatList
                     data={sortedTasks}
-                    keyExtractor={t => t.id}
+                    keyExtractor={(task) => task.id}
                     renderItem={renderTask}
                     contentContainerStyle={{ paddingBottom: 16 }}
                 />
             )}
 
-            {/* Yeni Görev Modal */}
-            <Modal visible={showNewTask} transparent animationType="slide">
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
-                        <Text style={styles.modalTitle}>{t('tasks.newTask')}</Text>
-                        <TextInput
-                            style={styles.input}
-                            placeholder={t('tasks.titleLabel')}
-                            placeholderTextColor="#888"
-                            value={newTitle}
-                            onChangeText={setNewTitle}
-                            autoFocus
-                        />
-                        <TextInput
-                            style={styles.input}
-                            placeholder={`${t('tasks.descriptionLabel')} (${t('common.chars', 'isteğe bağlı')})`}
-                            placeholderTextColor="#888"
-                            value={newDesc}
-                            onChangeText={setNewDesc}
-                        />
-                        <View style={styles.modalActions}>
-                            <TouchableOpacity
-                                style={styles.cancelBtn}
-                                onPress={() => { setShowNewTask(false); setNewTitle(''); setNewDesc(''); }}
-                            >
-                                <Text style={styles.cancelBtnText}>{t('common.cancel')}</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={[styles.confirmBtn, !newTitle.trim() && styles.confirmBtnDisabled]}
-                                onPress={handleCreate}
-                                disabled={!newTitle.trim() || isCreating}
-                            >
-                                {isCreating
-                                    ? <ActivityIndicator color="#fff" size="small" />
-                                    : <Text style={styles.confirmBtnText}>{t('common.create')}</Text>
-                                }
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </View>
-            </Modal>
-
-            {/* Düzenleme Modal */}
-            <Modal visible={!!editingTask} transparent animationType="slide">
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
-                        <Text style={styles.modalTitle}>{t('tasks.editTask')}</Text>
-                        <TextInput
-                            style={styles.input}
-                            placeholder={t('tasks.titleLabel')}
-                            placeholderTextColor="#888"
-                            value={editTitle}
-                            onChangeText={setEditTitle}
-                            autoFocus
-                        />
-                        <TextInput
-                            style={styles.input}
-                            placeholder={`${t('tasks.descriptionLabel')} (${t('common.chars', 'isteğe bağlı')})`}
-                            placeholderTextColor="#888"
-                            value={editDesc}
-                            onChangeText={setEditDesc}
-                        />
-                        <View style={styles.modalActions}>
-                            <TouchableOpacity
-                                style={styles.deleteBtn}
-                                onPress={() => editingTask && handleDelete(editingTask)}
-                            >
-                                <Text style={styles.deleteBtnText}>{t('common.delete')}</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={styles.cancelBtn}
-                                onPress={() => setEditingTask(null)}
-                            >
-                                <Text style={styles.cancelBtnText}>{t('common.cancel')}</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={[styles.confirmBtn, !editTitle.trim() && styles.confirmBtnDisabled]}
-                                onPress={handleSaveEdit}
-                                disabled={!editTitle.trim() || isSaving}
-                            >
-                                {isSaving
-                                    ? <ActivityIndicator color="#fff" size="small" />
-                                    : <Text style={styles.confirmBtnText}>{t('common.save')}</Text>
-                                }
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </View>
-            </Modal>
-
-            {/* Durum Seçici */}
-            <Modal visible={!!statusPickerTask} transparent animationType="fade">
-                <TouchableOpacity
-                    style={styles.pickerOverlay}
-                    activeOpacity={1}
-                    onPress={() => setStatusPickerTask(null)}
-                >
-                    <View style={styles.pickerSheet}>
-                        <Text style={styles.pickerTitle}>{t('tasks.changeStatus', 'Durum Seç')}</Text>
-                        {([
-                            { value: 'todo', label: t('tasks.toDoShort'), color: '#888' },
-                            { value: 'inprogress', label: t('tasks.inProgressShort'), color: '#6366f1' },
-                            { value: 'done', label: t('tasks.doneShort'), color: '#22c55e' },
-                        ] as const).map((opt) => (
-                            <TouchableOpacity
-                                key={opt.value}
-                                style={[
-                                    styles.pickerOption,
-                                    statusPickerTask?.status === opt.value && styles.pickerOptionActive,
-                                ]}
-                                onPress={() => handleStatusSelect(opt.value)}
-                            >
-                                <View style={[styles.pickerDot, { backgroundColor: opt.color }]} />
-                                <Text style={[
-                                    styles.pickerOptionText,
-                                    statusPickerTask?.status === opt.value && { color: '#fff' },
-                                ]}>
-                                    {opt.label}
-                                </Text>
-                                {statusPickerTask?.status === opt.value && (
-                                    <Text style={styles.pickerCheck}>✓</Text>
-                                )}
-                            </TouchableOpacity>
-                        ))}
-                    </View>
-                </TouchableOpacity>
-            </Modal>
+            <NewTaskModal
+                visible={showNewTask}
+                onClose={() => setShowNewTask(false)}
+                onCreate={handleCreate}
+            />
+            <EditTaskModal
+                task={editingTask}
+                onClose={() => setEditingTask(null)}
+                onSave={handleSaveEdit}
+                onDelete={handleDelete}
+            />
+            <StatusPickerModal
+                task={statusPickerTask}
+                onClose={() => setStatusPickerTask(null)}
+                onSelect={handleStatusSelect}
+            />
         </View>
     );
 }
@@ -344,58 +226,4 @@ const styles = StyleSheet.create({
     iconBtn: { padding: 4 },
     iconBtnText: { color: '#555', fontSize: 16 },
     empty: { color: '#555', textAlign: 'center', marginTop: 60, fontSize: 15 },
-    modalOverlay: {
-        flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end',
-    },
-    modalContent: {
-        backgroundColor: '#1a1a1a', borderTopLeftRadius: 16, borderTopRightRadius: 16,
-        padding: 24, paddingBottom: 40,
-    },
-    modalTitle: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginBottom: 16 },
-    input: {
-        backgroundColor: '#0f0f0f', color: '#fff', borderRadius: 8,
-        paddingHorizontal: 14, paddingVertical: 12, marginBottom: 10,
-        fontSize: 15, borderWidth: 1, borderColor: '#2a2a2a',
-    },
-    modalActions: { flexDirection: 'row', gap: 8, marginTop: 6 },
-    cancelBtn: {
-        flex: 1, paddingVertical: 12, borderRadius: 8,
-        borderWidth: 1, borderColor: '#333', alignItems: 'center',
-    },
-    cancelBtnText: { color: '#888', fontWeight: '600' },
-    confirmBtn: {
-        flex: 1, paddingVertical: 12, borderRadius: 8,
-        backgroundColor: '#6366f1', alignItems: 'center',
-    },
-    confirmBtnDisabled: { backgroundColor: '#333' },
-    confirmBtnText: { color: '#fff', fontWeight: '600' },
-    deleteBtn: {
-        paddingVertical: 12, paddingHorizontal: 16, borderRadius: 8,
-        backgroundColor: 'rgba(239,68,68,0.15)', alignItems: 'center',
-        borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)',
-    },
-    deleteBtnText: { color: '#ef4444', fontWeight: '600' },
-    pickerOverlay: {
-        flex: 1, backgroundColor: 'rgba(0,0,0,0.6)',
-        justifyContent: 'center', alignItems: 'center',
-    },
-    pickerSheet: {
-        backgroundColor: '#1a1a1a', borderRadius: 14,
-        paddingVertical: 8, width: 240,
-        borderWidth: 1, borderColor: '#2a2a2a',
-    },
-    pickerTitle: {
-        color: '#555', fontSize: 12, fontWeight: '600',
-        textTransform: 'uppercase', letterSpacing: 0.8,
-        paddingHorizontal: 16, paddingVertical: 10,
-        borderBottomWidth: 1, borderBottomColor: '#222',
-    },
-    pickerOption: {
-        flexDirection: 'row', alignItems: 'center',
-        paddingHorizontal: 16, paddingVertical: 13, gap: 10,
-    },
-    pickerOptionActive: { backgroundColor: 'rgba(99,102,241,0.1)' },
-    pickerDot: { width: 8, height: 8, borderRadius: 4 },
-    pickerOptionText: { color: '#aaa', fontSize: 15, flex: 1 },
-    pickerCheck: { color: '#6366f1', fontSize: 14, fontWeight: '600' },
 });
